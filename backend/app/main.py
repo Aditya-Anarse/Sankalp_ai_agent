@@ -52,6 +52,12 @@ app.include_router(social_accounts.router)
 app.include_router(calendar.router)
 app.include_router(notifications.router)
 
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+media_path = Path(settings.MEDIA_DIR)
+media_path.mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=str(media_path)), name="media")
+
 from .ai.providers import is_ai_configured
 
 @app.on_event("startup")

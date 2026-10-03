@@ -198,6 +198,7 @@ class ContentAssetUpdate(BaseModel):
     caption: Optional[str] = None
     hook: Optional[str] = None
     script: Optional[str] = None
+    media_url: Optional[str] = None
     hashtags: Optional[List[str]] = None
     cta: Optional[str] = None
     scheduled_at: Optional[datetime] = None
@@ -219,6 +220,8 @@ class ContentAssetResponse(BaseModel):
     quality_status: str
     quality_notes: List[str]
     status: str
+    published_url: Optional[str] = None
+    publish_error: Optional[str] = None
     scheduled_at: Optional[datetime]
     published_at: Optional[datetime]
     created_at: datetime

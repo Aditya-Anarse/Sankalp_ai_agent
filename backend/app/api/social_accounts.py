@@ -155,12 +155,12 @@ def instagram_oauth_debug():
     return {
         "INSTAGRAM_CLIENT_ID": client_id_masked,
         "Generated_redirect_uri": settings.INSTAGRAM_REDIRECT_URI,
-        "Registered_redirect_uri": "http://localhost:8000/social-accounts/instagram/callback",
+        "Registered_redirect_uri": settings.INSTAGRAM_REDIRECT_URI,
         "OAuth_endpoint": "https://www.instagram.com/oauth/authorize",
         "OAuth_host": "www.instagram.com",
         "Scope": scopes,
         "Frontend_URL": "http://localhost:3000/connected-accounts",
-        "Backend_URL": "http://localhost:8000/social-accounts/instagram/callback",
+        "Backend_URL": settings.INSTAGRAM_REDIRECT_URI,
         "Token_exchange_endpoint": "https://api.instagram.com/oauth/access_token",
         "Token_exchange_redirect_uri": settings.INSTAGRAM_REDIRECT_URI,
         "Encoded_redirect_uri_in_query": urllib.parse.quote(settings.INSTAGRAM_REDIRECT_URI, safe=""),
@@ -169,66 +169,98 @@ def instagram_oauth_debug():
     }
 
 
+# In-memory temporary state cache for OAuth CSRF protection and tenant binding
+_oauth_states: Dict[str, Dict[str, Any]] = {}
+
+
 @router.get("/instagram/authorize")
-def authorize_instagram(redirect: bool = False):
-    """Generates official Instagram API with Instagram Login OAuth URL."""
+def authorize_instagram(
+    redirect: bool = False,
+    business_id: Optional[str] = Query(None),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db)
+):
+    """Generates official Instagram API with Instagram Login OAuth URL with secure CSRF state."""
     if not settings.INSTAGRAM_CLIENT_ID:
         raise HTTPException(status_code=400, detail="INSTAGRAM_CLIENT_ID not configured in environment")
+
+    # Resolve target business
+    biz = None
+    if business_id:
+        biz = db.query(Business).filter(Business.id == business_id).first()
+    if not biz and current_user:
+        biz = db.query(Business).filter(Business.owner_id == current_user.id).first()
+    if not biz:
+        biz = db.query(Business).first()
+
+    target_business_id = biz.id if biz else None
+
+    # Generate secure random state token
+    import secrets
+    state_token = secrets.token_urlsafe(32)
+    _oauth_states[state_token] = {
+        "business_id": target_business_id,
+        "created_at": time.time(),
+    }
 
     scopes = "instagram_business_basic,instagram_business_content_publish"
     client_id_masked = f"{settings.INSTAGRAM_CLIENT_ID[:4]}...{settings.INSTAGRAM_CLIENT_ID[-4:]}" if settings.INSTAGRAM_CLIENT_ID and len(settings.INSTAGRAM_CLIENT_ID) > 8 else "***"
 
-    # Safe development debug logging per specification (Section 1)
-    print("\n" + "=" * 50)
-    print("INSTAGRAM OAUTH DEBUG")
-    print("-" * 21)
-    print(f"Client ID: {client_id_masked}")
-    print(f"Redirect URI: {settings.INSTAGRAM_REDIRECT_URI}")
-    print("OAuth Host: www.instagram.com")
-    print(f"Scopes: {scopes}")
-    print("=" * 50 + "\n", flush=True)
-
     logger.info(
-        f"INSTAGRAM OAUTH DEBUG | Client ID: {client_id_masked} | "
-        f"Redirect URI: {settings.INSTAGRAM_REDIRECT_URI} | "
-        f"OAuth Host: www.instagram.com | Scopes: {scopes}"
+        f"INSTAGRAM OAUTH INIT | Client ID: {client_id_masked} | "
+        f"Business: {target_business_id} | Scopes: {scopes}"
     )
 
-    # Encode query parameters exactly once (Section 8 & 9)
     params = {
         "client_id": settings.INSTAGRAM_CLIENT_ID,
         "redirect_uri": settings.INSTAGRAM_REDIRECT_URI,
         "response_type": "code",
         "scope": scopes,
+        "state": state_token,
     }
     encoded_query = urllib.parse.urlencode(params)
     url = f"https://www.instagram.com/oauth/authorize?{encoded_query}"
 
     if redirect:
         return RedirectResponse(url=url, status_code=307)
-    return {"oauth_url": url, "platform": "instagram", "scopes": scopes.split(",")}
+    return {"oauth_url": url, "platform": "instagram", "scopes": scopes.split(","), "state": state_token}
 
 
 @router.get("/instagram/callback")
 async def instagram_callback(
     code: Optional[str] = Query(None),
+    state: Optional[str] = Query(None),
     error: Optional[str] = Query(None),
     error_description: Optional[str] = Query(None),
     error_reason: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
     """
-    Handles Instagram Login OAuth redirect.
-    Flow: Authorize -> OAuth callback -> authorization code -> token exchange -> account lookup -> token validation -> save account -> Connected.
-    If any step fails: show actual failure honestly. Never mark connected before successful validation.
+    Handles Instagram Login OAuth redirect with state verification and business binding.
+    Flow: Authorize -> Callback -> State Verify -> Code Exchange -> Account Lookup -> Save Account.
     """
     if error or not code:
         err_msg = error_description or error_reason or error or "Authorization code missing"
         logger.warning(f"Instagram OAuth authorization failed: {err_msg}")
         return RedirectResponse(url=f"http://localhost:3000/connected-accounts?error={err_msg}")
 
+    # Validate state and retrieve associated business
+    state_data = _oauth_states.pop(state, None) if state else None
+    target_business_id = state_data.get("business_id") if state_data else None
+
+    # Resolve business cleanly
+    business = None
+    if target_business_id:
+        business = db.query(Business).filter(Business.id == target_business_id).first()
+    if not business:
+        business = db.query(Business).first()
+
+    if not business:
+        logger.error("Instagram callback failed: No business found in database")
+        return RedirectResponse(url="http://localhost:3000/connected-accounts?error=no_business_found")
+
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=25.0) as client:
             # 1. Exchange authorization code for access token
             token_resp = await client.post(
                 "https://api.instagram.com/oauth/access_token",
@@ -273,8 +305,9 @@ async def instagram_callback(
                 logger.warning(f"Long-lived token exchange notice: {ex}")
 
             # 3. Lookup connected Instagram account profile
+            api_v = settings.INSTAGRAM_API_VERSION or "v21.0"
             me_resp = await client.get(
-                f"https://graph.instagram.com/{settings.INSTAGRAM_API_VERSION}/me",
+                f"https://graph.instagram.com/{api_v}/me",
                 params={
                     "fields": "id,username,name,account_type",
                     "access_token": final_token
@@ -297,15 +330,18 @@ async def instagram_callback(
             profile_data = me_resp.json()
             ig_acc_id = profile_data.get("id") or (str(user_id) if user_id else None)
             ig_username = profile_data.get("username") or profile_data.get("name")
+            account_type = str(profile_data.get("account_type", "")).upper()
 
             if not ig_acc_id or not ig_username:
                 return RedirectResponse(url="http://localhost:3000/connected-accounts?error=failed_to_identify_instagram_account")
 
-            # 4. Save to database ONLY upon verified authorization & real account identification
-            business = db.query(Business).first()
-            if not business:
-                return RedirectResponse(url="http://localhost:3000/connected-accounts?error=no_business_found")
+            # Verify Professional account requirement
+            if account_type and account_type not in ("BUSINESS", "MEDIA_CREATOR"):
+                err_msg = "Only Instagram Business or Creator accounts can be connected for publishing. Personal accounts are not supported by Meta."
+                logger.warning(f"Rejected non-professional Instagram account '{ig_username}': {account_type}")
+                return RedirectResponse(url=f"http://localhost:3000/connected-accounts?error={err_msg}")
 
+            # 4. Save to database for the verified business
             sa = db.query(SocialAccount).filter(
                 SocialAccount.business_id == business.id,
                 SocialAccount.platform == "instagram"

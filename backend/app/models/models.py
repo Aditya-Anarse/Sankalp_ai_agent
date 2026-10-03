@@ -288,6 +288,9 @@ class ContentAsset(Base):
     quality_notes_json = Column(Text, default='[]')
     
     status = Column(String(50), default="draft")  # draft, approved, scheduled, publishing, published, failed
+    published_url = Column(String(500), nullable=True)
+    publish_error = Column(Text, nullable=True)
+    publish_error_code = Column(String(50), nullable=True)
     scheduled_at = Column(DateTime, nullable=True)
     published_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -302,6 +305,10 @@ class ContentAsset(Base):
     @property
     def quality_notes(self):
         return json.loads(self.quality_notes_json) if self.quality_notes_json else []
+
+    @property
+    def post_url(self):
+        return self.published_url
 
 
 class ScheduledPost(Base):
@@ -328,6 +335,25 @@ class PublishedPost(Base):
     post_url = Column(String(500), nullable=True)
     published_at = Column(DateTime, default=datetime.utcnow)
     status = Column(String(50), default="published")
+
+
+class PublicationLog(Base):
+    __tablename__ = "publication_logs"
+
+    id = Column(String(64), primary_key=True, index=True)
+    business_id = Column(String(64), ForeignKey("businesses.id"), nullable=False)
+    content_asset_id = Column(String(64), ForeignKey("content_assets.id"), nullable=False)
+    platform = Column(String(50), nullable=False)
+    provider = Column(String(50), default="meta_instagram")
+    status = Column(String(50), nullable=False)  # published, failed
+    container_id = Column(String(255), nullable=True)
+    media_id = Column(String(255), nullable=True)
+    permalink = Column(String(500), nullable=True)
+    error_code = Column(String(100), nullable=True)
+    error_message = Column(Text, nullable=True)
+    raw_response = Column(Text, nullable=True)
+    attempted_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
 
 
 class AnalyticsSnapshot(Base):

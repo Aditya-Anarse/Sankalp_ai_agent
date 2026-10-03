@@ -27,11 +27,13 @@ class Settings(BaseSettings):
     
     # AI Providers
     AI_PROVIDER: str = _clean_env("AI_PROVIDER", "gemini")  # gemini | groq
+    IMAGE_PROVIDER: str = _clean_env("IMAGE_PROVIDER", "local")  # local | openai | gemini
+    LOCAL_IMAGE_MODEL: str = _clean_env("LOCAL_IMAGE_MODEL", "sd-turbo")
     GEMINI_API_KEY: Optional[str] = _clean_env("GEMINI_API_KEY")
     GROQ_API_KEY: Optional[str] = _clean_env("GROQ_API_KEY")
     
     # Social Integrations
-    INSTAGRAM_API_VERSION: str = _clean_env("INSTAGRAM_API_VERSION", "v19.0")
+    INSTAGRAM_API_VERSION: str = _clean_env("INSTAGRAM_API_VERSION", "v21.0")
     INSTAGRAM_CLIENT_ID: Optional[str] = _clean_env("INSTAGRAM_CLIENT_ID")
     INSTAGRAM_CLIENT_SECRET: Optional[str] = _clean_env("INSTAGRAM_CLIENT_SECRET")
     INSTAGRAM_REDIRECT_URI: str = _clean_env("INSTAGRAM_REDIRECT_URI", "http://localhost:8000/social-accounts/instagram/callback")
@@ -40,8 +42,15 @@ class Settings(BaseSettings):
     YOUTUBE_CLIENT_SECRET: Optional[str] = _clean_env("YOUTUBE_CLIENT_SECRET")
     YOUTUBE_REDIRECT_URI: str = _clean_env("YOUTUBE_REDIRECT_URI", "http://localhost:8000/social-accounts/youtube/callback")
     
-    # Storage & Redis
+    # Storage & Public Media
     STORAGE_URL: Optional[str] = _clean_env("STORAGE_URL", "local")
+    PUBLIC_MEDIA_BASE_URL: Optional[str] = _clean_env("PUBLIC_MEDIA_BASE_URL")
+    IMGBB_API_KEY: Optional[str] = _clean_env("IMGBB_API_KEY")
+    CLOUDINARY_CLOUD_NAME: Optional[str] = _clean_env("CLOUDINARY_CLOUD_NAME")
+    CLOUDINARY_API_KEY: Optional[str] = _clean_env("CLOUDINARY_API_KEY")
+    CLOUDINARY_API_SECRET: Optional[str] = _clean_env("CLOUDINARY_API_SECRET")
+    MEDIA_DIR: str = str(_base_dir / "media")
+    OPENAI_API_KEY: Optional[str] = _clean_env("OPENAI_API_KEY")
     REDIS_URL: Optional[str] = _clean_env("REDIS_URL", "redis://localhost:6379/0")
     
     @property

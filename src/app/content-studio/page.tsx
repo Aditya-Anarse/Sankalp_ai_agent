@@ -22,6 +22,8 @@ import {
   ShieldCheck,
   Clock,
   Layers,
+  ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -30,6 +32,8 @@ export default function ContentStudioPage() {
   const [activeTab, setActiveTab] = useState('all');
   const [editingItem, setEditingItem] = useState<ContentItem | null>(null);
   const [publishFeedback, setPublishFeedback] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [publishingStep, setPublishingStep] = useState<string | null>(null);
 
   const tabs = ['all', 'posts', 'carousels', 'reels', 'stories', 'videos', 'shorts'];
 
@@ -45,7 +49,6 @@ export default function ContentStudioPage() {
     return true;
   });
 
-
   const handleSaveEdit = async () => {
     if (!editingItem) return;
     await updateContentItem(editingItem);
@@ -53,13 +56,33 @@ export default function ContentStudioPage() {
   };
 
   const handlePublish = async (id: string) => {
+    if (publishingId) return; // Prevent duplicate clicks
+    setPublishingId(id);
+    setPublishingStep('Preparing media...');
+
+    const timer1 = setTimeout(() => setPublishingStep('Creating Instagram post container...'), 800);
+    const timer2 = setTimeout(() => setPublishingStep('Waiting for Instagram processing...'), 2200);
+
     try {
       const res = await publishContentItem(id);
-      setPublishFeedback(`Successfully published to ${res?.platform || 'platform'} via Official API.`);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      setPublishingStep('Published');
+      const realUrl = res?.permalink || res?.post_url;
+      setPublishFeedback(
+        realUrl
+          ? `Successfully published to Instagram via Meta Graph API! Real permalink: ${realUrl}`
+          : `Successfully published to ${res?.platform || 'Instagram'} via Meta Graph API.`
+      );
     } catch (err: any) {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
       setPublishFeedback(`Publishing failed: ${err.message || 'External API rejected request'}`);
+    } finally {
+      setPublishingId(null);
+      setPublishingStep(null);
+      setTimeout(() => setPublishFeedback(null), 8000);
     }
-    setTimeout(() => setPublishFeedback(null), 5000);
   };
 
   return (
@@ -204,7 +227,27 @@ export default function ContentStudioPage() {
 
                   <div className="pt-4 border-t border-white/[0.06] space-y-3">
                     <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
-                      <span>Status: <strong className="text-white uppercase">{item.status}</strong></span>
+                      {publishingId === item.id ? (
+                        <span className="text-cyan-300 font-bold flex items-center gap-1.5 animate-pulse">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          {publishingStep || 'Publishing...'}
+                        </span>
+                      ) : (
+                        <span>
+                          Status:{' '}
+                          <strong
+                            className={`uppercase ${
+                              item.status === 'published'
+                                ? 'text-emerald-400'
+                                : item.status === 'failed'
+                                ? 'text-red-400'
+                                : 'text-white'
+                            }`}
+                          >
+                            {item.status}
+                          </strong>
+                        </span>
+                      )}
                       {item.scheduled_at && (
                         <span className="text-cyan-300">
                           {new Date(item.scheduled_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
@@ -212,11 +255,18 @@ export default function ContentStudioPage() {
                       )}
                     </div>
 
+                    {item.status === 'failed' && item.publish_error && (
+                      <div className="p-2 rounded-lg bg-red-950/40 border border-red-500/30 text-[10px] font-mono text-red-200 line-clamp-2">
+                        {item.publish_error}
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-3 gap-2">
                       <GlassButton
                         variant="outline"
                         size="sm"
                         onClick={() => setEditingItem(item)}
+                        disabled={publishingId === item.id}
                         icon={<Edit3 className="w-3 h-3" />}
                       >
                         Edit
@@ -226,19 +276,49 @@ export default function ContentStudioPage() {
                         variant="outline"
                         size="sm"
                         onClick={() => scheduleContentItem(item.id, new Date(Date.now() + 86400000).toISOString())}
+                        disabled={publishingId === item.id}
                         icon={<Calendar className="w-3 h-3" />}
                       >
                         Schedule
                       </GlassButton>
 
-                      <GlassButton
-                        variant="cyanGlow"
-                        size="sm"
-                        onClick={() => handlePublish(item.id)}
-                        icon={<Share2 className="w-3 h-3" />}
-                      >
-                        Publish
-                      </GlassButton>
+                      {item.status === 'published' && (item.published_url || item.post_url) ? (
+                        <a
+                          href={item.published_url || item.post_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full"
+                        >
+                          <GlassButton
+                            variant="cyanGlow"
+                            size="sm"
+                            className="w-full text-emerald-300 border-emerald-500/30"
+                            icon={<ExternalLink className="w-3 h-3" />}
+                          >
+                            View Post
+                          </GlassButton>
+                        </a>
+                      ) : (
+                        <GlassButton
+                          variant="cyanGlow"
+                          size="sm"
+                          onClick={() => handlePublish(item.id)}
+                          disabled={Boolean(publishingId)}
+                          icon={
+                            publishingId === item.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Share2 className="w-3 h-3" />
+                            )
+                          }
+                        >
+                          {publishingId === item.id
+                            ? 'Publishing'
+                            : item.status === 'failed'
+                            ? 'Retry'
+                            : 'Publish'}
+                        </GlassButton>
+                      )}
                     </div>
                   </div>
                 </div>

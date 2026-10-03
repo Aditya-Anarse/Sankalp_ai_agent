@@ -1,11 +1,12 @@
 import json
+import uuid
 from datetime import datetime
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database.database import get_db
-from ..models.models import ContentAsset, Business, Campaign, SocialAccount
+from ..models.models import ContentAsset, Business, Campaign, SocialAccount, PublicationLog, PublishedPost
 from ..schemas.schemas import ContentAssetCreate, ContentAssetUpdate, ContentAssetResponse
 from ..agents.specialized import QualityAgent, CreativeAgent, PublisherAgent
 
@@ -46,6 +47,9 @@ def list_content_assets(
             "quality_status": a.quality_status,
             "quality_notes": a.quality_notes,
             "status": a.status,
+            "published_url": a.published_url,
+            "post_url": a.published_url,
+            "publish_error": a.publish_error,
             "scheduled_at": a.scheduled_at,
             "published_at": a.published_at,
             "created_at": a.created_at,
@@ -75,6 +79,9 @@ def get_content_asset(id: str, db: Session = Depends(get_db)):
         "quality_status": a.quality_status,
         "quality_notes": a.quality_notes,
         "status": a.status,
+        "published_url": a.published_url,
+        "post_url": a.published_url,
+        "publish_error": a.publish_error,
         "scheduled_at": a.scheduled_at,
         "published_at": a.published_at,
         "created_at": a.created_at,
@@ -107,6 +114,7 @@ async def update_content_asset(id: str, payload: ContentAssetUpdate, db: Session
     return {
         "status": "updated",
         "id": a.id,
+        "media_url": a.media_url,
         "quality_status": a.quality_status,
         "quality_notes": a.quality_notes,
     }
@@ -161,6 +169,8 @@ async def regenerate_content_asset(id: str, db: Session = Depends(get_db)):
     a.caption = new_data.get("caption", a.caption)
     a.script = new_data.get("script", a.script)
     a.cta = new_data.get("cta", a.cta)
+    if new_data.get("media_url"):
+        a.media_url = new_data.get("media_url")
     a.quality_status = "PASS"
     a.quality_notes_json = "[]"
     db.commit()
@@ -171,6 +181,7 @@ async def regenerate_content_asset(id: str, db: Session = Depends(get_db)):
         "hook": a.hook,
         "caption": a.caption,
         "script": a.script,
+        "media_url": a.media_url,
         "quality_status": a.quality_status
     }
 
@@ -200,7 +211,7 @@ async def publish_content(id: str, db: Session = Depends(get_db)):
             detail="Cannot publish content that has not passed Quality Agent audit."
         )
 
-    # Check for verified connected social account
+    # 1. Check for verified connected social account
     platform_name = (a.platform or "instagram").lower()
     social_acc = (
         db.query(SocialAccount)
@@ -214,43 +225,128 @@ async def publish_content(id: str, db: Session = Depends(get_db)):
 
     if not social_acc or not social_acc.access_token:
         a.status = "failed"
+        a.publish_error = f"{a.platform.capitalize()} is not connected. Connect an authenticated account with publish permissions first."
+        a.publish_error_code = "NOT_CONNECTED"
         db.commit()
         raise HTTPException(
             status_code=400,
-            detail=f"{a.platform.capitalize()} is not connected. Connect an authenticated account with publish permissions first."
+            detail=a.publish_error
         )
 
-    # Actual real API publish call via PublisherAgent
+    # 2. Check token expiration before dispatch
+    if social_acc.token_expires_at:
+        exp = social_acc.token_expires_at.replace(tzinfo=None) if social_acc.token_expires_at.tzinfo else social_acc.token_expires_at
+        if exp <= datetime.utcnow():
+            a.status = "failed"
+            a.publish_error = "Instagram access token has expired. Please re-authenticate your Instagram account in Connected Accounts."
+            a.publish_error_code = "TOKEN_EXPIRED"
+            db.commit()
+            raise HTTPException(
+                status_code=401,
+                detail=a.publish_error
+            )
+
+    # 3. Build complete content_item without dropping content_type
     publisher = PublisherAgent()
     platform_conn = {
         "access_token": social_acc.access_token,
         "account_id": social_acc.account_id,
+        "token_expires_at": social_acc.token_expires_at,
     }
     content_item = {
+        "content_asset_id": a.id,
+        "content_type": a.content_type or "Post",
         "platform": a.platform,
-        "caption": a.caption or a.title or "",
         "media_url": a.media_url or "",
+        "caption": a.caption or a.title or "",
+        "title": a.title or "",
     }
 
     pub_res = await publisher.execute(content_item, platform_conn)
 
+    # 4. Handle Publication Outcome and Persist Audit Trail
     if pub_res.get("status") == "PUBLISHED":
+        permalink = pub_res.get("permalink") or pub_res.get("post_url")
+        media_id = pub_res.get("media_id")
+        container_id = pub_res.get("container_id")
+
         a.status = "published"
         a.published_at = datetime.utcnow()
+        a.published_url = permalink
+        a.publish_error = None
+        a.publish_error_code = None
+
+        # Insert into PublicationLog
+        pub_log = PublicationLog(
+            id=f"publog_{uuid.uuid4().hex[:12]}",
+            business_id=a.business_id,
+            content_asset_id=a.id,
+            platform=a.platform,
+            provider="meta_instagram",
+            status="published",
+            container_id=container_id,
+            media_id=media_id,
+            permalink=permalink,
+            attempted_at=datetime.utcnow(),
+            completed_at=datetime.utcnow(),
+        )
+        db.add(pub_log)
+
+        # Insert into PublishedPost
+        pub_post = PublishedPost(
+            id=f"post_{uuid.uuid4().hex[:12]}",
+            business_id=a.business_id,
+            campaign_id=a.campaign_id,
+            content_asset_id=a.id,
+            platform=a.platform,
+            post_url=permalink,
+            published_at=datetime.utcnow(),
+            status="published",
+        )
+        db.add(pub_post)
         db.commit()
+
         return {
             "status": "published",
             "id": a.id,
             "platform": a.platform,
-            "media_id": pub_res.get("media_id"),
-            "post_url": pub_res.get("post_url"),
+            "media_id": media_id,
+            "post_url": permalink,
+            "permalink": permalink,
         }
     else:
+        err_msg = pub_res.get("error", f"Publishing to {a.platform} failed on external platform.")
+        err_code = pub_res.get("error_code") or "PUBLISH_FAILED"
+        raw_resp = pub_res.get("raw_response")
+        container_id = pub_res.get("container_id")
+
         a.status = "failed"
+        a.publish_error = err_msg
+        a.publish_error_code = err_code
+
+        # Insert failure record into PublicationLog
+        pub_log = PublicationLog(
+            id=f"publog_{uuid.uuid4().hex[:12]}",
+            business_id=a.business_id,
+            content_asset_id=a.id,
+            platform=a.platform,
+            provider="meta_instagram",
+            status="failed",
+            container_id=container_id,
+            error_code=err_code,
+            error_message=err_msg,
+            raw_response=raw_resp,
+            attempted_at=datetime.utcnow(),
+            completed_at=datetime.utcnow(),
+        )
+        db.add(pub_log)
         db.commit()
+
+        # Map client validation issues to 400, external platform issues to 502
+        status_code = 400 if err_code in ("NO_ACTIVE_CONNECTION", "MISSING_MEDIA_URL", "NON_HTTPS_MEDIA_URL") else 502
         raise HTTPException(
-            status_code=502,
-            detail=pub_res.get("error", f"Publishing to {a.platform} failed on external platform.")
+            status_code=status_code,
+            detail=err_msg
         )
 
 
@@ -262,3 +358,4 @@ def delete_content_asset(id: str, db: Session = Depends(get_db)):
     db.delete(a)
     db.commit()
     return {"status": "deleted", "id": id}
+

@@ -37,6 +37,9 @@ export interface ContentItem {
   hashtags?: string[];
   cta?: string;
   status: 'draft' | 'approved' | 'scheduled' | 'published' | 'failed' | string;
+  published_url?: string;
+  post_url?: string;
+  publish_error?: string;
   quality_status?: 'PASS' | 'NEEDS_REVISION' | string;
   quality_score?: number;
   scheduled_at?: string;
