@@ -76,57 +76,80 @@ export default function CampaignsDirectoryPage() {
             </div>
           </div>
 
-          {/* Campaign Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {campaigns
-              .filter((c) => filter === 'all' || c.status.toLowerCase() === filter)
-              .map((camp) => (
-                <GlassCard
-                  key={camp.id}
-                  className="p-6 border-white/[0.08] hover:border-cyan-500/40 transition-all flex flex-col justify-between space-y-4 text-left"
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="text-base font-bold text-white line-clamp-2">{camp.name}</h3>
-                      <span
-                        className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-full border ${
-                          camp.status === 'review'
-                            ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
-                            : camp.status === 'scheduled'
-                            ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
-                            : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
-                        }`}
-                      >
-                        {camp.status}
-                      </span>
+          {/* Campaign Cards Grid or Empty State */}
+          {campaigns.length === 0 ? (
+            <GlassCard className="p-12 text-center border-dashed border-white/[0.1] space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center text-slate-400 mx-auto">
+                <Flame className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-white">No campaigns created yet.</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  Instruct your AI marketing employee to plan and generate multi-day editorial campaign sprints.
+                </p>
+              </div>
+              <div className="pt-2">
+                <Link href="/workspace/ai-manager">
+                  <GlassButton variant="cyanGlow" size="sm">
+                    Create Campaign
+                  </GlassButton>
+                </Link>
+              </div>
+            </GlassCard>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {campaigns
+                .filter((c) => filter === 'all' || c.status.toLowerCase() === filter)
+                .map((camp) => (
+                  <GlassCard
+                    key={camp.id}
+                    className="p-6 border-white/[0.08] hover:border-cyan-500/40 transition-all flex flex-col justify-between space-y-4 text-left"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="text-base font-bold text-white line-clamp-2">{camp.name}</h3>
+                        <span
+                          className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-full border ${
+                            camp.status === 'review'
+                              ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                              : camp.status === 'scheduled'
+                              ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+                              : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                          }`}
+                        >
+                          {camp.status}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-slate-400 line-clamp-2">{camp.objective}</p>
+
+                      <div className="flex items-center gap-2 pt-2 text-xs text-slate-300">
+                        <span className="flex items-center gap-1">
+                          <Instagram className="w-3.5 h-3.5 text-pink-400" />
+                          <Youtube className="w-3.5 h-3.5 text-red-400" />
+                        </span>
+                        <span className="text-[11px] font-mono text-slate-500">•</span>
+                        <span className="text-[11px] font-mono text-cyan-300">
+                          {camp.content ? `${camp.content.length} Assets` : 'Multi-Asset Sprint'}
+                        </span>
+                      </div>
                     </div>
 
-                    <p className="text-xs text-slate-400 line-clamp-2">{camp.objective}</p>
-
-                    <div className="flex items-center gap-2 pt-2 text-xs text-slate-300">
-                      <span className="flex items-center gap-1">
-                        <Instagram className="w-3.5 h-3.5 text-pink-400" />
-                        <Youtube className="w-3.5 h-3.5 text-red-400" />
+                    <div className="pt-4 border-t border-white/[0.06] flex items-center justify-between">
+                      <span className="text-[10px] font-mono text-slate-500">
+                        Created: {new Date(camp.created_at).toLocaleDateString()}
                       </span>
-                      <span className="text-[11px] font-mono text-slate-500">•</span>
-                      <span className="text-[11px] font-mono text-cyan-300">5 Content Assets</span>
+
+                      <Link href={`/campaigns/${camp.id}`}>
+                        <GlassButton variant="outline" size="sm" icon={<ArrowRight className="w-3.5 h-3.5" />}>
+                          Manage Sprint
+                        </GlassButton>
+                      </Link>
                     </div>
-                  </div>
-
-                  <div className="pt-4 border-t border-white/[0.06] flex items-center justify-between">
-                    <span className="text-[10px] font-mono text-slate-500">
-                      Created: {new Date(camp.created_at).toLocaleDateString()}
-                    </span>
-
-                    <Link href={`/campaigns/${camp.id}`}>
-                      <GlassButton variant="outline" size="sm" icon={<ArrowRight className="w-3.5 h-3.5" />}>
-                        Manage Sprint
-                      </GlassButton>
-                    </Link>
-                  </div>
-                </GlassCard>
-              ))}
-          </div>
+                  </GlassCard>
+                ))}
+            </div>
+          )}
         </main>
       </div>
     </div>

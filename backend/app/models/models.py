@@ -194,8 +194,7 @@ class SocialAccount(Base):
     platform = Column(String(50), nullable=False)  # instagram, youtube
     account_name = Column(String(255), nullable=False)
     account_id = Column(String(255), nullable=True)
-    is_connected = Column(Boolean, default=True)
-    is_demo_mode = Column(Boolean, default=True)
+    is_connected = Column(Boolean, default=False)
     permissions_json = Column(Text, default='["publish", "read_insights"]')
     access_token = Column(Text, nullable=True)
     token_expires_at = Column(DateTime, nullable=True)
@@ -288,10 +287,9 @@ class ContentAsset(Base):
     quality_status = Column(String(50), default="PASS")  # PASS, NEEDS_REVISION
     quality_notes_json = Column(Text, default='[]')
     
-    status = Column(String(50), default="draft")  # draft, approved, scheduled, published, failed
+    status = Column(String(50), default="draft")  # draft, approved, scheduled, publishing, published, failed
     scheduled_at = Column(DateTime, nullable=True)
     published_at = Column(DateTime, nullable=True)
-    is_demo_mode = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     business = relationship("Business", back_populates="content_assets")
@@ -350,7 +348,6 @@ class AnalyticsSnapshot(Base):
     followers_count = Column(Integer, default=0)
     watch_time_seconds = Column(Float, default=0.0)
     engagement_rate = Column(Float, default=0.0)
-    is_demo_data = Column(Boolean, default=True)
     captured_at = Column(DateTime, default=datetime.utcnow)
 
     business = relationship("Business", back_populates="analytics_snapshots")

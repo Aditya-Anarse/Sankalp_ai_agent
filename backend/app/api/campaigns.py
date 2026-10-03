@@ -14,75 +14,18 @@ from ..agents.specialized import ResearchAgent, StrategyAgent, CreativeAgent, Qu
 router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
 
 
-def get_default_business(db: Session) -> Business:
-    biz = db.query(Business).first()
-    if not biz:
-        biz = Business(
-            id=f"biz_{int(time.time()*1000)}",
-            owner_id="usr_demo",
-            name="ABC Fashion Store",
-            business_type="D2C Brand",
-        )
-        db.add(biz)
-        db.commit()
-    return biz
-
-
 @router.get("")
 def list_campaigns(db: Session = Depends(get_db)):
-    biz = get_default_business(db)
-    campaigns = db.query(Campaign).filter(Campaign.business_id == biz.id).order_by(Campaign.created_at.desc()).all()
-    
-    # If no campaigns, seed a default showcase campaign
-    if not campaigns:
-        c_id = f"cmp_demo_{int(time.time()*1000)}"
-        c = Campaign(
-            id=c_id,
-            business_id=biz.id,
-            name="New Summer Collection Sprint",
-            objective="Promote Products & Drive Weekend Traffic",
-            duration_days=5,
-            status="running",
-            is_approved=True,
-            brand_fidelity_score=99.4,
-            platforms_json='["instagram", "youtube"]',
-            brief="Focus on organic breathable fabric, aesthetic unboxing reels, and limited time launch offer.",
-            research_json=json.dumps({
-                "trends": ["Rising search volume (+184% 7d velocity) around minimalist sustainable fashion."],
-                "opportunities": ["Position collection as the daily essential standard."],
-            }),
-            strategy_json=json.dumps({
-                "campaign_name": "Summer Collection Sprint",
-                "duration_days": 5,
-                "content_pillars": ["Product Education", "Brand Authority", "Social Proof", "Lifestyle Integration", "Conversion"],
-            }),
-        )
-        db.add(c)
-        db.commit()
+    biz = db.query(Business).first()
+    if not biz:
+        return []
 
-        # Add sample assets
-        now = datetime.utcnow()
-        for i in range(1, 4):
-            asset = ContentAsset(
-                id=f"asset_demo_{i}",
-                campaign_id=c.id,
-                business_id=biz.id,
-                platform="instagram",
-                content_type="Reel" if i % 2 == 1 else "Carousel",
-                title=f"Day {i} — Summer Collection Drop",
-                hook="Why 82% of shoppers switched fabrics in 2026.",
-                caption="We spent 6 months refining this silhouette. Zero synthetic compromise.\n\nExplore at link in bio.",
-                script="[0:00-0:03] Hook overlay.\n[0:03-0:10] Fabric macro close-up.\n[0:10-0:15] CTA.",
-                media_url="https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=600&auto=format&fit=crop&q=80",
-                quality_status="PASS",
-                quality_notes_json='[]',
-                status="scheduled",
-                scheduled_at=now + timedelta(days=i),
-                is_demo_mode=True,
-            )
-            db.add(asset)
-        db.commit()
-        campaigns = [c]
+    campaigns = (
+        db.query(Campaign)
+        .filter(Campaign.business_id == biz.id)
+        .order_by(Campaign.created_at.desc())
+        .all()
+    )
 
     result = []
     for c in campaigns:
@@ -106,9 +49,14 @@ def list_campaigns(db: Session = Depends(get_db)):
 
 @router.post("")
 async def create_campaign(payload: CampaignCreate, db: Session = Depends(get_db)):
-    biz = get_default_business(db)
+    biz = db.query(Business).first()
+    if not biz:
+        raise HTTPException(
+            status_code=400,
+            detail="No business configured yet. Complete business setup before creating a campaign."
+        )
+
     c_id = f"cmp_{int(time.time()*1000)}"
-    
     campaign = Campaign(
         id=c_id,
         business_id=biz.id,
@@ -199,7 +147,9 @@ async def execute_campaign_research(id: str, db: Session = Depends(get_db)):
     c = db.query(Campaign).filter(Campaign.id == id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    biz = db.query(Business).filter(Business.id == c.business_id).first() or get_default_business(db)
+    biz = db.query(Business).filter(Business.id == c.business_id).first()
+    if not biz:
+        raise HTTPException(status_code=404, detail="No business configured yet.")
 
     agent = ResearchAgent()
     biz_context = {
@@ -218,7 +168,9 @@ async def execute_campaign_strategy(id: str, db: Session = Depends(get_db)):
     c = db.query(Campaign).filter(Campaign.id == id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    biz = db.query(Business).filter(Business.id == c.business_id).first() or get_default_business(db)
+    biz = db.query(Business).filter(Business.id == c.business_id).first()
+    if not biz:
+        raise HTTPException(status_code=404, detail="No business configured yet.")
 
     research = json.loads(c.research_json) if c.research_json else {}
     agent = StrategyAgent()
@@ -237,7 +189,9 @@ async def execute_campaign_generate(id: str, db: Session = Depends(get_db)):
     c = db.query(Campaign).filter(Campaign.id == id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    biz = db.query(Business).filter(Business.id == c.business_id).first() or get_default_business(db)
+    biz = db.query(Business).filter(Business.id == c.business_id).first()
+    if not biz:
+        raise HTTPException(status_code=404, detail="No business configured yet.")
 
     strategy = json.loads(c.strategy_json) if c.strategy_json else {}
     schedule = strategy.get("schedule", [
@@ -272,7 +226,6 @@ async def execute_campaign_generate(id: str, db: Session = Depends(get_db)):
             cta=content_data.get("cta", ""),
             quality_status="PASS",
             status="approved",
-            is_demo_mode=True,
             created_at=datetime.utcnow()
         )
         db.add(asset)

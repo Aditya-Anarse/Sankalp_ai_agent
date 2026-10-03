@@ -22,12 +22,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         pw_bytes = plain_password.encode("utf-8")[:72]
         hash_bytes = hashed_password.encode("utf-8")
-        if bcrypt.checkpw(pw_bytes, hash_bytes):
-            return True
+        return bcrypt.checkpw(pw_bytes, hash_bytes)
     except Exception:
-        pass
-    # Safe check for demo testing if hashed as plain text
-    return plain_password == hashed_password
+        return False
 
 
 def get_password_hash(password: str) -> str:

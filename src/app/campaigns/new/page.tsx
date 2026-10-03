@@ -26,15 +26,15 @@ export default function NewCampaignPage() {
   const [loading, setLoading] = useState(false);
 
   const [formData, setFormData] = useState({
-    name: 'New Summer Collection Blitz',
-    objective: 'Promote our flagship products with high-converting Reels & educational Carousels.',
+    name: '',
+    objective: '',
     productId: products[0]?.id || '',
-    targetAudience: '21-35 years, Urban Professionals & Creators',
+    targetAudience: '',
     platforms: ['instagram', 'youtube'],
     durationDays: '5',
     frequency: 'Daily',
     formats: ['Reels', 'Carousels', 'Shorts'],
-    brief: 'Focus on craftsmanship, comfort technology, and urban lifestyle versatility with clear pricing transparency.',
+    brief: '',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -44,7 +44,11 @@ export default function NewCampaignPage() {
       const res = await createCampaignChat(
         `Create a ${formData.durationDays}-day campaign named "${formData.name}". Objective: ${formData.objective}. Target formats: ${formData.formats.join(', ')}.`
       );
-      router.push(`/campaigns/${res.campaign_id || 'camp-001'}`);
+      if (res && res.campaign_id) {
+        router.push(`/campaigns/${res.campaign_id}`);
+      } else {
+        router.push('/campaigns');
+      }
     } catch (err) {
       router.push('/campaigns');
     } finally {
@@ -92,6 +96,7 @@ export default function NewCampaignPage() {
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g. Q4 Growth Sprint or New Product Drop"
                   className="w-full bg-white/[0.03] border border-white/[0.1] rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-400"
                   required
                 />
@@ -104,6 +109,7 @@ export default function NewCampaignPage() {
                 <textarea
                   value={formData.objective}
                   onChange={(e) => setFormData({ ...formData, objective: e.target.value })}
+                  placeholder="e.g. Drive organic sales and brand awareness with educational short-form video and carousels."
                   rows={3}
                   className="w-full bg-white/[0.03] border border-white/[0.1] rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-400"
                   required

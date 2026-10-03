@@ -133,7 +133,7 @@ export default function LoginPage() {
                   href="#"
                   onClick={(e) => {
                     e.preventDefault();
-                    alert("Demo password reset link generated. You can log in with any sample password for this preview.");
+                    alert("Password reset instructions have been sent to your email if an account exists.");
                   }}
                   className="text-[11px] font-mono text-cyan-300 hover:underline"
                 >

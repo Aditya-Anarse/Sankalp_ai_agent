@@ -140,15 +140,13 @@ class ContentPreferencesResponse(BaseModel):
 class SocialAccountConnect(BaseModel):
     platform: str
     account_name: str
-    is_demo_mode: bool = True
 
 class SocialAccountResponse(BaseModel):
     id: str
     platform: str
     account_name: str
     is_connected: bool
-    is_demo_mode: bool
-    last_synced_at: datetime
+    last_synced_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -223,7 +221,6 @@ class ContentAssetResponse(BaseModel):
     status: str
     scheduled_at: Optional[datetime]
     published_at: Optional[datetime]
-    is_demo_mode: bool
     created_at: datetime
 
     class Config:
@@ -237,7 +234,6 @@ class AnalyticsResponse(BaseModel):
     total_comments: int
     total_shares: int
     avg_engagement_rate: float
-    is_demo_data: bool
     platform_breakdown: Dict[str, Any]
     content_performance: List[Dict[str, Any]]
 

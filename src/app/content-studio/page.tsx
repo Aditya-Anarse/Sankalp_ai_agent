@@ -53,9 +53,13 @@ export default function ContentStudioPage() {
   };
 
   const handlePublish = async (id: string) => {
-    const res = await publishContentItem(id);
-    setPublishFeedback(res?.message || 'Publishing simulation completed (Demo Mode active).');
-    setTimeout(() => setPublishFeedback(null), 4000);
+    try {
+      const res = await publishContentItem(id);
+      setPublishFeedback(`Successfully published to ${res?.platform || 'platform'} via Official API.`);
+    } catch (err: any) {
+      setPublishFeedback(`Publishing failed: ${err.message || 'External API rejected request'}`);
+    }
+    setTimeout(() => setPublishFeedback(null), 5000);
   };
 
   return (
@@ -120,13 +124,33 @@ export default function ContentStudioPage() {
             </span>
           </div>
 
-          {/* Content Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredItems.map((item) => (
-              <GlassCard
-                key={item.id}
-                className="overflow-hidden border-white/[0.08] hover:border-cyan-500/40 transition-all flex flex-col justify-between"
-              >
+          {/* Content Cards Grid or Empty State */}
+          {filteredItems.length === 0 ? (
+            <GlassCard className="p-12 text-center border-dashed border-white/[0.1] space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center text-slate-400 mx-auto">
+                <Film className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-white">No content created yet.</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  Use the AI Manager to execute campaign strategy and generate on-brand content assets for your channels.
+                </p>
+              </div>
+              <div className="pt-2">
+                <Link href="/workspace/ai-manager">
+                  <GlassButton variant="cyanGlow" size="sm">
+                    Create Content
+                  </GlassButton>
+                </Link>
+              </div>
+            </GlassCard>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredItems.map((item) => (
+                <GlassCard
+                  key={item.id}
+                  className="overflow-hidden border-white/[0.08] hover:border-cyan-500/40 transition-all flex flex-col justify-between"
+                >
                 {/* Media Banner */}
                 <div className="relative h-48 w-full bg-slate-900 overflow-hidden group">
                   {item.media_url ? (
@@ -221,6 +245,7 @@ export default function ContentStudioPage() {
               </GlassCard>
             ))}
           </div>
+          )}
         </main>
       </div>
 

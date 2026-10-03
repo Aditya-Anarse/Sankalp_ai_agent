@@ -1,54 +1,50 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { OnboardingLayout } from "@/components/onboarding/OnboardingLayout";
-import { GlassCard } from "@/components/ui/GlassCard";
 import { GlassButton } from "@/components/ui/GlassButton";
 import { useOnboarding } from "@/context/OnboardingContext";
 import {
   Instagram,
   Youtube,
   CheckCircle2,
-  Share2,
-  Sparkles,
-  ShieldCheck,
-  X,
-  Bot,
-  ArrowRight,
+  ExternalLink,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { api } from "@/lib/api";
 
 export default function ConnectStepPage() {
   const router = useRouter();
-  const { state, connectAccount, disconnectAccount, setCurrentStep } = useOnboarding();
+  const { state, setCurrentStep } = useOnboarding();
+  const [realAccounts, setRealAccounts] = useState<any[]>([]);
 
-  const [modalPlatform, setModalPlatform] = useState<"instagram" | "youtube" | null>(null);
-  const [handleInput, setHandleInput] = useState("");
-  const [connecting, setConnecting] = useState(false);
+  useEffect(() => {
+    const fetchAccounts = async () => {
+      try {
+        const res = await api.socialAccounts.list();
+        if (Array.isArray(res)) {
+          setRealAccounts(res);
+        }
+      } catch (err) {
+        console.warn("Could not fetch accounts:", err);
+      }
+    };
+    fetchAccounts();
+  }, []);
 
-  const handleOpenModal = (platform: "instagram" | "youtube") => {
-    const defaultHandle =
-      platform === "instagram"
-        ? `@${state.businessProfile.businessName.toLowerCase().replace(/\s+/g, "_") || "demo_brand"}`
-        : `${state.businessProfile.businessName || "Demo Brand"} Channel`;
-    setHandleInput(defaultHandle);
-    setModalPlatform(platform);
+  const instagramAccount = realAccounts.find(
+    (a) => a.platform === "instagram" && a.is_connected
+  );
+  const youtubeAccount = realAccounts.find(
+    (a) => a.platform === "youtube" && a.is_connected
+  );
+
+  const handleConnectInstagram = () => {
+    window.location.href = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/social-accounts/instagram/authorize?redirect=true`;
   };
 
-  const handleSimulateConnect = () => {
-    if (!modalPlatform) return;
-    setConnecting(true);
-
-    setTimeout(() => {
-      if (modalPlatform === "instagram") {
-        connectAccount("instagram", { handle: handleInput || "@demo_business" });
-      } else {
-        connectAccount("youtube", { channelName: handleInput || "Demo Channel" });
-      }
-      setConnecting(false);
-      setModalPlatform(null);
-    }, 1200);
+  const handleConnectYoutube = () => {
+    window.location.href = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/social-accounts/youtube/authorize?redirect=true`;
   };
 
   const handleNext = () => {
@@ -56,14 +52,11 @@ export default function ConnectStepPage() {
     router.push("/onboarding/complete");
   };
 
-  const isInstagramConnected = state.connectedAccounts.instagram.connected;
-  const isYoutubeConnected = state.connectedAccounts.youtube.connected;
-
   return (
     <OnboardingLayout
       currentStep={7}
-      heading="Where should SANKALP work?"
-      subheading="Connect your social media accounts so your AI marketing employee can prepare and schedule campaigns."
+      heading="Connect Your Social Channels"
+      subheading="Connect your authentic Instagram and YouTube accounts via OAuth for autonomous publishing and real analytics."
       nextText="Review & Complete"
       onNext={handleNext}
     >
@@ -78,42 +71,40 @@ export default function ConnectStepPage() {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-white">Instagram Business</h3>
-                {isInstagramConnected ? (
+                {instagramAccount ? (
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 font-semibold">
-                    <CheckCircle2 className="w-3 h-3" /> Ready
+                    <CheckCircle2 className="w-3 h-3" /> Connected
                   </span>
                 ) : (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
-                    Primary Channel
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/30">
+                    Not Connected
                   </span>
                 )}
               </div>
 
               <p className="text-xs text-slate-400 mt-1 max-w-md leading-relaxed">
-                {isInstagramConnected
-                  ? `Connected as ${state.connectedAccounts.instagram.handle}. SANKALP is ready to generate feed carousels, reels, and story drops.`
-                  : "Connect your Instagram business account to let SANKALP prepare high-converting carousels, reels, and stories."}
+                {instagramAccount
+                  ? `Connected as ${instagramAccount.account_name}. Verified with Meta Graph API.`
+                  : "Connect your official Instagram Business account via Meta OAuth to enable publishing and analytics."}
               </p>
             </div>
           </div>
 
           <div>
-            {isInstagramConnected ? (
-              <button
-                type="button"
-                onClick={() => disconnectAccount("instagram")}
-                className="text-xs font-mono text-slate-400 hover:text-red-400 px-3 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.06] transition-colors"
-              >
-                Disconnect
-              </button>
+            {instagramAccount ? (
+              <span className="text-xs font-mono text-emerald-400 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                Connected
+              </span>
             ) : (
               <GlassButton
                 type="button"
                 variant="cyanGlow"
                 size="sm"
-                onClick={() => handleOpenModal("instagram")}
+                onClick={handleConnectInstagram}
+                className="flex items-center gap-1.5"
               >
-                Connect Instagram
+                <span>Connect Instagram</span>
+                <ExternalLink className="w-3.5 h-3.5" />
               </GlassButton>
             )}
           </div>
@@ -129,131 +120,48 @@ export default function ConnectStepPage() {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-white">YouTube Shorts & Channel</h3>
-                {isYoutubeConnected && (
+                {youtubeAccount ? (
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 font-semibold">
-                    <CheckCircle2 className="w-3 h-3" /> Ready
+                    <CheckCircle2 className="w-3 h-3" /> Connected
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/30">
+                    Not Connected
                   </span>
                 )}
               </div>
 
               <p className="text-xs text-slate-400 mt-1 max-w-md leading-relaxed">
-                {isYoutubeConnected
-                  ? `Connected as ${state.connectedAccounts.youtube.channelName}. SANKALP will script and schedule Shorts campaigns.`
-                  : "Connect your YouTube channel for future video publishing and analytics."}
+                {youtubeAccount
+                  ? `Connected as ${youtubeAccount.account_name}. Verified with Google API.`
+                  : "Connect your verified YouTube channel via Google OAuth for automated scheduling."}
               </p>
             </div>
           </div>
 
           <div>
-            {isYoutubeConnected ? (
-              <button
-                type="button"
-                onClick={() => disconnectAccount("youtube")}
-                className="text-xs font-mono text-slate-400 hover:text-red-400 px-3 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.06] transition-colors"
-              >
-                Disconnect
-              </button>
+            {youtubeAccount ? (
+              <span className="text-xs font-mono text-emerald-400 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                Connected
+              </span>
             ) : (
               <GlassButton
                 type="button"
                 variant="secondary"
                 size="sm"
-                onClick={() => handleOpenModal("youtube")}
+                onClick={handleConnectYoutube}
+                className="flex items-center gap-1.5"
               >
-                Connect YouTube
+                <span>Connect YouTube</span>
+                <ExternalLink className="w-3.5 h-3.5" />
               </GlassButton>
             )}
           </div>
         </div>
 
-        {/* Simulated Connect Modal */}
-        <AnimatePresence>
-          {modalPlatform && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setModalPlatform(null)}
-                className="absolute inset-0 bg-black/80 backdrop-blur-md"
-              />
-
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: 15 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                className="relative z-10 w-full max-w-md"
-              >
-                <GlassCard className="p-6 sm:p-8 border-cyan-500/30 shadow-2xl space-y-5 text-left">
-                  <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300">
-                        <Share2 className="w-4 h-4" />
-                      </div>
-                      <h4 className="text-sm font-bold text-white">
-                        Connect {modalPlatform === "instagram" ? "Instagram" : "YouTube"}
-                      </h4>
-                    </div>
-
-                    <button
-                      onClick={() => setModalPlatform(null)}
-                      className="text-slate-400 hover:text-white"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    This simulated demo connection will configure SANKALP's dispatch mesh for{" "}
-                    <strong>{modalPlatform === "instagram" ? "Instagram" : "YouTube"}</strong>.
-                  </p>
-
-                  <div className="space-y-1.5">
-                    <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-300">
-                      {modalPlatform === "instagram" ? "Instagram Handle" : "Channel Name"}
-                    </label>
-                    <input
-                      type="text"
-                      value={handleInput}
-                      onChange={(e) => setHandleInput(e.target.value)}
-                      placeholder={modalPlatform === "instagram" ? "@yourbusiness" : "Your Channel"}
-                      className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/[0.15] text-white text-xs font-mono outline-none focus:border-cyan-400"
-                    />
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/20 text-[11px] font-mono text-cyan-300 flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-                    <span>Read-Only & Scheduled Dispatch Permissions</span>
-                  </div>
-
-                  <div className="flex items-center justify-end gap-3 pt-2">
-                    <GlassButton
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setModalPlatform(null)}
-                    >
-                      Cancel
-                    </GlassButton>
-                    <GlassButton
-                      type="button"
-                      variant="cyanGlow"
-                      size="sm"
-                      disabled={connecting}
-                      onClick={handleSimulateConnect}
-                    >
-                      {connecting ? "Connecting..." : "Connect Demo Account"}
-                    </GlassButton>
-                  </div>
-                </GlassCard>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-
         {/* Note */}
         <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] text-xs text-slate-400 flex items-center justify-between">
-          <span>You can link additional channels anytime from your Workspace Settings.</span>
+          <span>You can link or manage accounts anytime from your Connected Accounts page.</span>
         </div>
       </div>
     </OnboardingLayout>

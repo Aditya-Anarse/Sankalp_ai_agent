@@ -73,7 +73,7 @@ export default function BusinessStepPage() {
         <GlassInput
           label="Business / Brand Name"
           required
-          placeholder="e.g. ABC Fashion Store or Aura Studio"
+          placeholder="e.g. Acme Studio or Aura Organics"
           value={form.businessName}
           onChange={(e) => {
             setForm({ ...form, businessName: e.target.value });

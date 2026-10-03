@@ -17,11 +17,10 @@ import {
 } from "lucide-react";
 
 interface HeroSectionProps {
-  onOpenDemo?: () => void;
   onOpenAuth?: () => void;
 }
 
-export function HeroSection({ onOpenDemo, onOpenAuth }: HeroSectionProps) {
+export function HeroSection({ onOpenAuth }: HeroSectionProps) {
   return (
     <section className="relative min-h-[95vh] pt-32 pb-20 md:pt-40 md:pb-32 flex items-center overflow-hidden">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -101,16 +100,17 @@ export function HeroSection({ onOpenDemo, onOpenAuth }: HeroSectionProps) {
                 </GlassButton>
               </Link>
 
-              <GlassButton
-                variant="secondary"
-                size="lg"
-                onClick={onOpenDemo}
-                icon={<Play className="w-4 h-4 fill-white/80 text-white/80" />}
-                iconPosition="left"
-                className="w-full sm:w-auto"
-              >
-                Watch Demo
-              </GlassButton>
+              <Link href="#workflow" className="w-full sm:w-auto">
+                <GlassButton
+                  variant="secondary"
+                  size="lg"
+                  icon={<ArrowRight className="w-4 h-4 text-white/80" />}
+                  iconPosition="right"
+                  className="w-full sm:w-auto"
+                >
+                  Explore Workflow
+                </GlassButton>
+              </Link>
             </motion.div>
 
             {/* Micro Feature Bullets */}

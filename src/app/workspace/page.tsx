@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
@@ -9,117 +9,86 @@ import { QuickActionCard } from "@/components/workspace/QuickActionCard";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { GlassButton } from "@/components/ui/GlassButton";
 import { useOnboarding } from "@/context/OnboardingContext";
+import { useApp } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
+import { api } from "@/lib/api";
 import {
-  Plus,
   Flame,
-  Calendar,
-  Sparkles,
-  ShoppingBag,
-  Film,
-  BarChart2,
-  CheckCircle2,
   Clock,
   Instagram,
   Youtube,
-  Zap,
-  Tag,
-  ArrowRight,
+  Plus,
   RefreshCw,
-  X,
+  ShoppingBag,
+  Calendar,
+  BarChart2,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
 
 export default function WorkspacePage() {
   const router = useRouter();
   const { state } = useOnboarding();
+  const { business, campaigns, contentItems, refreshAll } = useApp();
   const { user } = useAuth();
 
-  const [activeTab, setActiveTab] = useState("Overview");
-  const [modalAction, setModalAction] = useState<string | null>(null);
+  const [connectedAccounts, setConnectedAccounts] = useState<any[]>([]);
+
+  useEffect(() => {
+    refreshAll();
+    const fetchAccounts = async () => {
+      try {
+        const accs = await api.socialAccounts.list();
+        if (Array.isArray(accs)) {
+          setConnectedAccounts(accs);
+        }
+      } catch (e) {
+        console.warn("Could not fetch accounts:", e);
+      }
+    };
+    fetchAccounts();
+  }, []);
 
   const businessName =
-    state.businessProfile.businessName || user?.businessName || "My Business";
-  const primaryProduct = state.products[0] || {
-    name: "Premium Product",
-    category: "General",
-    price: "₹1,999",
-    description: "Everyday flagship product.",
-  };
+    business.name || state.businessProfile.businessName || user?.businessName || "My Business";
 
-  const activeCampaigns = [
-    {
-      title: `${primaryProduct.name} Spotlight Sprint`,
-      channel: "Instagram",
-      goal: state.goals.primary || "Promote Products",
-      pace: state.contentPreferences.frequency || "3x per week",
-      status: "Active",
-      health: "Optimal (99.4%)",
-    },
-    {
-      title: `${state.brand.tone[0] || "Modern"} Founder Narrative`,
-      channel: "YouTube & Instagram",
-      goal: "Build Audience",
-      pace: "Weekly",
-      status: "Active",
-      health: "Optimal (98.8%)",
-    },
-  ];
+  const instagramAcc = connectedAccounts.find(
+    (a) => a.platform === "instagram" && a.is_connected
+  );
+  const youtubeAcc = connectedAccounts.find(
+    (a) => a.platform === "youtube" && a.is_connected
+  );
 
-  const upcomingQueue = [
-    {
-      title: `Why ${primaryProduct.name} is the standard in 2026`,
-      time: `Today, ${state.contentPreferences.postingTime.split(" ")[0]}`,
-      type: state.contentPreferences.formats[0] || "Reel",
-      platform: "Instagram",
-      status: "QA Approved",
-    },
-    {
-      title: `Behind the Craft: Sourcing & Story`,
-      time: "Tomorrow, 14:00",
-      type: "Carousel",
-      platform: "Instagram",
-      status: "Ready to Dispatch",
-    },
-    {
-      title: `Weekend VIP Drop & Exclusive Offer`,
-      time: "Friday, 18:30",
-      type: "Story Series",
-      platform: "Instagram",
-      status: "Generating Variations",
-    },
-  ];
+  const scheduledItems = contentItems.filter(
+    (c) => c.status === "scheduled" || c.scheduled_at
+  );
 
   return (
     <div className="min-h-screen bg-[#05060A] text-white flex flex-col lg:flex-row overflow-x-hidden">
       {/* Sidebar */}
-      <WorkspaceSidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <WorkspaceSidebar activeTab="Overview" />
 
-      {/* Main Workspace Body */}
+      {/* Main Workspace Workspace */}
       <div className="flex-1 flex flex-col min-h-screen">
-        {/* Top Floating Utility Header */}
+        {/* Top Header */}
         <header className="px-6 sm:px-8 py-4 bg-[#080A10]/70 backdrop-blur-xl border-b border-white/[0.06] flex items-center justify-between sticky top-0 z-30">
           <div className="flex items-center gap-3">
             <span className="text-xs font-mono text-slate-400">
-              Workspace ID: <strong className="text-white">#WS-{businessName.substring(0, 3).toUpperCase()}-9842</strong>
-            </span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
-              ● SYNC ACTIVE
+              Workspace: <strong className="text-white">{businessName}</strong>
             </span>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="hidden sm:inline-block text-[10px] font-mono px-2.5 py-1 rounded-full bg-white/[0.04] text-slate-400 border border-white/[0.08]">
-              Demo Mode Active
-            </span>
-            <GlassButton
-              variant="cyanGlow"
-              size="sm"
-              onClick={() => setModalAction("Create Campaign")}
-              icon={<Plus className="w-3.5 h-3.5" />}
-            >
-              + Create Campaign
-            </GlassButton>
+            <Link href="/workspace/ai-manager">
+              <GlassButton
+                variant="cyanGlow"
+                size="sm"
+                icon={<Plus className="w-3.5 h-3.5" />}
+              >
+                + Create Campaign
+              </GlassButton>
+            </Link>
           </div>
         </header>
 
@@ -129,20 +98,20 @@ export default function WorkspacePage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/[0.06] text-left">
             <div>
               <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
-                Good morning, {businessName} 👋
+                {businessName} Workspace
               </h1>
               <p className="text-xs sm:text-sm text-slate-400 mt-1 flex items-center gap-2">
-                <span>Your AI marketing employee is active and managing your roadmap.</span>
+                <span>Autonomous marketing operations powered by 7 specialized agents.</span>
               </p>
             </div>
 
             <div className="flex items-center gap-2">
               <Link
-                href="/onboarding/business"
+                href="/brand-settings"
                 className="text-xs font-mono px-3 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] text-slate-300 hover:text-cyan-300 transition-colors flex items-center gap-1.5"
               >
                 <RefreshCw className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Adjust AI Brief</span>
+                <span>Brand Settings</span>
               </Link>
             </div>
           </div>
@@ -156,44 +125,43 @@ export default function WorkspacePage() {
               <span className="text-xs font-mono uppercase tracking-widest text-slate-400 font-semibold">
                 Quick Actions
               </span>
-              <span className="text-[11px] font-mono text-cyan-400">1-Click Dispatch</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <QuickActionCard
-                title="Create Product Post"
-                description={`Generate on-brand hooks & carousel slides for ${primaryProduct.name}.`}
+                title="AI Manager Campaign"
+                description="Prompt your AI marketing manager to research and launch a new campaign."
                 icon={<ShoppingBag className="w-5 h-5" />}
-                tag="Generative"
+                tag="Autonomous"
                 accent="cyan"
-                onClick={() => setModalAction("Create Product Post")}
+                onClick={() => router.push("/workspace/ai-manager")}
               />
 
               <QuickActionCard
-                title="Launch Offer"
-                description="Draft high-converting limited-time flash promotion across stories & reels."
+                title="Content Studio"
+                description="Review, edit, quality-check, and schedule generated content assets."
                 icon={<Flame className="w-5 h-5" />}
-                tag="High-Velocity"
+                tag="Creation"
                 accent="amber"
-                onClick={() => setModalAction("Launch Offer")}
+                onClick={() => router.push("/content-studio")}
               />
 
               <QuickActionCard
-                title="Plan This Week"
-                description={`Synthesize a 7-day editorial calendar for ${state.contentPreferences.frequency}.`}
+                title="Content Calendar"
+                description="Inspect scheduled publishing queue and multi-platform drops."
                 icon={<Calendar className="w-5 h-5" />}
-                tag="Strategy"
+                tag="Schedule"
                 accent="violet"
-                onClick={() => setModalAction("Plan This Week")}
+                onClick={() => router.push("/calendar")}
               />
 
               <QuickActionCard
-                title="Analyze Performance"
-                description="Inspect real-time engagement tensors, save ratios, and sentiment heatmaps."
+                title="Performance & Insights"
+                description="View telemetry, platform analytics, and autonomous learning patterns."
                 icon={<BarChart2 className="w-5 h-5" />}
                 tag="Telemetry"
                 accent="emerald"
-                onClick={() => setModalAction("Analyze Performance")}
+                onClick={() => router.push("/analytics")}
               />
             </div>
           </div>
@@ -205,37 +173,50 @@ export default function WorkspacePage() {
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
                   <Flame className="w-4 h-4 text-cyan-400" />
-                  Active Autonomous Campaigns
+                  Active Campaigns
                 </h3>
-                <span className="text-[10px] font-mono text-emerald-400">
-                  {activeCampaigns.length} Sprints Running
+                <span className="text-[10px] font-mono text-cyan-400">
+                  {campaigns.length} Total
                 </span>
               </div>
 
               <div className="space-y-3">
-                {activeCampaigns.map((camp) => (
-                  <GlassCard
-                    key={camp.title}
-                    className="p-5 border-white/[0.08] hover:border-cyan-500/30 transition-all space-y-3"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h4 className="text-sm font-bold text-white">{camp.title}</h4>
-                        <span className="text-xs text-slate-400 mt-0.5 block">
-                          Goal: {camp.goal} • Channel: {camp.channel}
+                {campaigns.length === 0 ? (
+                  <GlassCard className="p-8 text-center border-dashed border-white/[0.1] space-y-3">
+                    <p className="text-xs text-slate-400">No campaigns created yet.</p>
+                    <Link href="/workspace/ai-manager">
+                      <GlassButton variant="cyanGlow" size="sm">
+                        Create Your First Campaign
+                      </GlassButton>
+                    </Link>
+                  </GlassCard>
+                ) : (
+                  campaigns.map((camp) => (
+                    <GlassCard
+                      key={camp.id}
+                      className="p-5 border-white/[0.08] hover:border-cyan-500/30 transition-all space-y-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h4 className="text-sm font-bold text-white">{camp.name}</h4>
+                          <span className="text-xs text-slate-400 mt-0.5 block truncate max-w-sm">
+                            {camp.objective}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 uppercase">
+                          {camp.status}
                         </span>
                       </div>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
-                        {camp.status}
-                      </span>
-                    </div>
 
-                    <div className="flex items-center justify-between text-[11px] font-mono pt-2 border-t border-white/[0.06] text-slate-400">
-                      <span>Pace: {camp.pace}</span>
-                      <span className="text-cyan-300">Brand Fidelity: {camp.health}</span>
-                    </div>
-                  </GlassCard>
-                ))}
+                      <div className="flex items-center justify-between text-[11px] font-mono pt-2 border-t border-white/[0.06] text-slate-400">
+                        <span>Platforms: {camp.target_platforms?.join(", ") || "Instagram"}</span>
+                        <Link href="/campaigns" className="text-cyan-400 hover:underline">
+                          View Details →
+                        </Link>
+                      </div>
+                    </GlassCard>
+                  ))
+                )}
               </div>
             </div>
 
@@ -244,36 +225,51 @@ export default function WorkspacePage() {
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
                   <Clock className="w-4 h-4 text-cyan-400" />
-                  Upcoming Auto-Dispatch Queue
+                  Scheduled Publishing Queue
                 </h3>
-                <span className="text-[10px] font-mono text-cyan-400">Next drop today</span>
+                <span className="text-[10px] font-mono text-cyan-400">
+                  {scheduledItems.length} Scheduled
+                </span>
               </div>
 
               <div className="space-y-3">
-                {upcomingQueue.map((item) => (
-                  <GlassCard
-                    key={item.title}
-                    className="p-4 border-white/[0.08] flex items-center justify-between gap-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-white truncate">
-                        {item.title}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] font-mono text-slate-400">
-                          {item.platform} • {item.type}
-                        </span>
-                        <span className="text-[10px] font-mono text-cyan-400">
-                          {item.time}
-                        </span>
-                      </div>
-                    </div>
-
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 flex-shrink-0">
-                      {item.status}
-                    </span>
+                {scheduledItems.length === 0 ? (
+                  <GlassCard className="p-8 text-center border-dashed border-white/[0.1] space-y-3">
+                    <p className="text-xs text-slate-400">No scheduled content.</p>
+                    <Link href="/content-studio">
+                      <GlassButton variant="secondary" size="sm">
+                        Open Content Studio
+                      </GlassButton>
+                    </Link>
                   </GlassCard>
-                ))}
+                ) : (
+                  scheduledItems.map((item) => (
+                    <GlassCard
+                      key={item.id}
+                      className="p-4 border-white/[0.08] flex items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-white truncate">
+                          {item.title}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] font-mono text-slate-400 capitalize">
+                            {item.platform} • {item.content_type}
+                          </span>
+                          {item.scheduled_at && (
+                            <span className="text-[10px] font-mono text-cyan-400">
+                              {new Date(item.scheduled_at).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 flex-shrink-0 uppercase">
+                        {item.status}
+                      </span>
+                    </GlassCard>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -282,11 +278,11 @@ export default function WorkspacePage() {
           <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/[0.06] text-left">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-mono uppercase tracking-wider text-slate-400 font-semibold">
-                Connected Channel Health
+                Connected Platforms
               </span>
-              <span className="text-[10px] font-mono text-slate-500">
-                Phase 2 Simulated State
-              </span>
+              <Link href="/connected-accounts" className="text-xs font-mono text-cyan-400 hover:underline">
+                Manage Accounts →
+              </Link>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -298,11 +294,15 @@ export default function WorkspacePage() {
                   <div>
                     <span className="text-xs font-bold text-white block">Instagram Business</span>
                     <span className="text-[10px] font-mono text-slate-400">
-                      {state.connectedAccounts.instagram.handle || "@demo_business (Ready)"}
+                      {instagramAcc ? instagramAcc.account_name : "Not Connected"}
                     </span>
                   </div>
                 </div>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                {instagramAcc ? (
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" title="Connected" />
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-slate-600" title="Not Connected" />
+                )}
               </div>
 
               <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] flex items-center justify-between">
@@ -311,83 +311,22 @@ export default function WorkspacePage() {
                     <Youtube className="w-4 h-4" />
                   </div>
                   <div>
-                    <span className="text-xs font-bold text-white block">YouTube Shorts</span>
+                    <span className="text-xs font-bold text-white block">YouTube Channel</span>
                     <span className="text-[10px] font-mono text-slate-400">
-                      {state.connectedAccounts.youtube.channelName || "Channel (Ready)"}
+                      {youtubeAcc ? youtubeAcc.account_name : "Not Connected"}
                     </span>
                   </div>
                 </div>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                {youtubeAcc ? (
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" title="Connected" />
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-slate-600" title="Not Connected" />
+                )}
               </div>
             </div>
           </div>
         </main>
       </div>
-
-      {/* Simulated Action Modal */}
-      <AnimatePresence>
-        {modalAction && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setModalAction(null)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-md"
-            />
-
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="relative z-10 w-full max-w-lg"
-            >
-              <GlassCard className="p-6 sm:p-8 border-cyan-500/30 shadow-2xl space-y-4 text-left">
-                <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300">
-                      <Sparkles className="w-4 h-4 animate-pulse" />
-                    </div>
-                    <h3 className="text-sm font-bold text-white">{modalAction}</h3>
-                  </div>
-
-                  <button
-                    onClick={() => setModalAction(null)}
-                    className="text-slate-400 hover:text-white"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  SANKALP AI is executing <strong>{modalAction}</strong> using your brand constitution for{" "}
-                  <strong>{businessName}</strong>.
-                </p>
-
-                <div className="p-4 rounded-xl bg-cyan-950/20 border border-cyan-500/20 space-y-2 font-mono text-xs text-slate-300">
-                  <div className="flex items-center justify-between text-cyan-300 font-bold">
-                    <span>STATUS: EXECUTING IN BACKGROUND</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  </div>
-                  <p>• Product Target: {primaryProduct.name} ({primaryProduct.price})</p>
-                  <p>• Tone Alignment: {state.brand.tone.join(" + ")}</p>
-                  <p>• Guardrail Check: PASSED (Fidelity 99.8%)</p>
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <GlassButton
-                    variant="cyanGlow"
-                    size="sm"
-                    onClick={() => setModalAction(null)}
-                  >
-                    Done
-                  </GlassButton>
-                </div>
-              </GlassCard>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

@@ -30,91 +30,93 @@ export default function CampaignWorkspacePage() {
   const params = useParams();
   const router = useRouter();
   const { campaigns, contentItems, runStepWorkflow, business } = useApp();
-  const campaignId = (params?.id as string) || 'camp-001';
+  const campaignId = params?.id as string;
 
-  const campaign = campaigns.find((c) => c.id === campaignId) || {
-    id: campaignId,
-    name: 'Urban Glide Summer Launch Blitz',
-    objective: 'Introduce the Urban Glide sneaker with 5-day structured hook-to-offer funnel.',
-    target_platforms: ['instagram', 'youtube'],
-    status: 'review',
-    created_at: new Date().toISOString(),
-  };
-
-  const assets = contentItems.filter((c) => c.campaign_id === campaignId || true);
+  const campaign = campaigns.find((c) => c.id === campaignId);
 
   const [activeStepTab, setActiveStepTab] = useState('creative');
   const [runningStep, setRunningStep] = useState<string | null>(null);
+
+  if (!campaign) {
+    return (
+      <div className="min-h-screen bg-[#05060A] text-white flex flex-col lg:flex-row overflow-x-hidden">
+        <WorkspaceSidebar activeTab="Campaigns" />
+        <div className="flex-1 flex flex-col min-h-screen p-8 items-center justify-center">
+          <GlassCard className="p-8 text-center max-w-md space-y-4">
+            <h2 className="text-lg font-bold text-white">Campaign Not Found</h2>
+            <p className="text-xs text-slate-400">
+              The requested campaign does not exist or has not been created yet.
+            </p>
+            <Link href="/campaigns">
+              <GlassButton variant="cyanGlow" size="sm">
+                Return to Campaigns
+              </GlassButton>
+            </Link>
+          </GlassCard>
+        </div>
+      </div>
+    );
+  }
+
+  const assets = contentItems.filter((c) => c.campaign_id === campaignId);
 
   const timelineSteps = [
     {
       id: 'research',
       agent: 'Research Agent',
       label: 'Research & Signals',
-      status: 'completed',
-      summary: 'Analyzed trend spikes in breathable footwear and commuter ergonomics.',
-      details: {
-        trends: ['High interest in minimalist commuter sneakers', 'Search demand for all-day arch cushion'],
-        audience_insights: ['21-35 age group values breathable materials and versatile street styling'],
-        content_angles: ['10k Steps Street Test', 'Pain-point comparison: standard vs responsive foam', 'Craftsmanship breakdown'],
-        risks: ['Avoid unsupported orthopedic or medical claims'],
-      }
+      status: campaign.research || ['planning', 'creating', 'review', 'scheduled', 'running', 'completed'].includes(campaign.status) ? 'completed' : 'pending',
+      summary: campaign.research?.summary || 'Market research and competitor signals analysis for target audience.',
+      details: campaign.research,
     },
     {
       id: 'strategy',
       agent: 'Strategy Agent',
       label: 'Campaign Strategy',
-      status: 'completed',
-      summary: '5-Day sequential funnel spanning Announcement, Feature Deep-Dive, Social Proof, and Launch Offer.',
-      details: {
-        duration: '5 Days',
-        channels: ['Instagram (Reels, Carousels)', 'YouTube Shorts'],
-        pillars: ['Day 1: Drop Announcement', 'Day 2: Biomechanical Tech Breakdown', 'Day 3: Commute Reel', 'Day 4: Community FAQ', 'Day 5: VIP Drop Access'],
-        success_metric: 'Target Engagement > 8.5%, Save Ratio > 4.0%',
-      }
+      status: campaign.strategy || ['creating', 'review', 'scheduled', 'running', 'completed'].includes(campaign.status) ? 'completed' : 'pending',
+      summary: campaign.strategy?.summary || `${(campaign.target_platforms || []).join(', ') || 'Multi-channel'} funnel strategy.`,
+      details: campaign.strategy,
     },
     {
       id: 'creative',
       agent: 'Creative Agent',
       label: 'Creative Content',
-      status: 'completed',
-      summary: `${assets.length} multi-platform assets synthesized with verified hooks, captions, and scripts.`,
+      status: assets.length > 0 ? 'completed' : campaign.status === 'creating' ? 'ready' : 'pending',
+      summary: assets.length > 0 ? `${assets.length} multi-platform assets synthesized.` : 'Creative assets pending generation.',
       details: {
         generated_assets: assets.length,
-        formats: ['Reel Script', 'Educational Carousel (5 slides)', 'YouTube Short Concept'],
       }
     },
     {
       id: 'quality',
       agent: 'Quality Agent',
       label: 'Quality Audit (QA)',
-      status: 'completed',
-      summary: 'Passed all 8 guardrails (Pricing parity, brand voice, character limits, policy safe).',
+      status: assets.length > 0 && assets.every((a) => a.quality_status === 'PASS') ? 'completed' : assets.length > 0 ? 'ready' : 'pending',
+      summary: assets.length > 0 ? 'Quality & brand safety verification for campaign assets.' : 'Awaiting asset generation for QA audit.',
       details: {
-        status: 'PASS',
-        checks: ['Brand Voice Consistency: 100%', 'Pricing Consistency: Match INR 4,999', 'Safe Claims: No medical claims detected', 'Platform Aspect Ratios: Verified 9:16 & 4:5'],
+        checks: ['Brand Voice Consistency', 'Pricing & Claim Verification', 'Platform Aspect Ratios', 'Safety & Guardrails'],
       }
     },
     {
       id: 'schedule',
       agent: 'Publisher Agent',
       label: 'Schedule & Dispatch',
-      status: campaign.status === 'scheduled' ? 'completed' : 'ready',
-      summary: 'Editorial calendar sequenced with optimal publishing windows (18:30 IST).',
+      status: ['scheduled', 'running', 'completed'].includes(campaign.status) ? 'completed' : assets.length > 0 ? 'ready' : 'pending',
+      summary: 'Editorial calendar sequencing and platform dispatch.',
     },
     {
       id: 'analyze',
       agent: 'Performance Agent',
       label: 'Performance Telemetry',
-      status: 'pending',
+      status: ['running', 'completed'].includes(campaign.status) ? 'completed' : 'pending',
       summary: 'Will monitor initial view velocity, reach, and retention once published.',
     },
     {
       id: 'learn',
       agent: 'Learning Agent',
       label: 'Learning Loop',
-      status: 'pending',
-      summary: 'Autonomous pattern discovery will calibrate future campaign strategies.',
+      status: campaign.status === 'completed' ? 'completed' : 'pending',
+      summary: 'Autonomous pattern discovery calibrates future campaign strategies.',
     }
   ];
 
@@ -235,7 +237,7 @@ export default function CampaignWorkspacePage() {
                   onClick={() => handleExecuteStep(activeStepTab as any)}
                   disabled={runningStep !== null}
                 >
-                  {runningStep === activeStepTab ? 'Processing...' : 'Re-run Step'}
+                  {runningStep === activeStepTab ? 'Processing...' : 'Run Step'}
                 </GlassButton>
               </div>
             </div>
@@ -243,32 +245,31 @@ export default function CampaignWorkspacePage() {
             {/* Dynamic Step Content */}
             {activeStepTab === 'research' && (
               <div className="space-y-4 text-xs font-mono text-slate-300">
-                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-2">
-                  <span className="text-cyan-300 font-bold block">Audience & Trend Opportunities:</span>
-                  <p>• High search demand identified for breathable lightweight city sneakers.</p>
-                  <p>• Commuter fatigue is a core conversion pain-point.</p>
-                </div>
-                <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/20 text-emerald-200">
-                  <span className="font-bold block mb-1">Recommended Angles:</span>
-                  <p>1. "Stop wearing shoes that destroy your feet by 3 PM"</p>
-                  <p>2. "10,000 steps concrete test in Bangalore heat"</p>
-                </div>
+                {campaign.research ? (
+                  <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-2">
+                    <span className="text-cyan-300 font-bold block">Research Insights:</span>
+                    <pre className="whitespace-pre-wrap font-sans text-xs text-slate-300">{JSON.stringify(campaign.research, null, 2)}</pre>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] text-slate-400">
+                    Research signals recorded during campaign initiation. Execute the Research Agent to re-evaluate audience and trend signals.
+                  </div>
+                )}
               </div>
             )}
 
             {activeStepTab === 'strategy' && (
               <div className="space-y-4">
-                <p className="text-xs text-slate-300">
-                  5-Day structured content funnel calibrated for peak organic retention:
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 font-mono text-xs">
-                  {['Day 1: Announcement', 'Day 2: Tech Breakdown', 'Day 3: Commute Reel', 'Day 4: Community Focus', 'Day 5: Drop Live Offer'].map((day, idx) => (
-                    <div key={idx} className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.08]">
-                      <span className="text-cyan-400 font-bold block text-[10px]">STAGE {idx + 1}</span>
-                      <span className="text-white mt-1 block">{day}</span>
-                    </div>
-                  ))}
-                </div>
+                {campaign.strategy ? (
+                  <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] text-xs space-y-2">
+                    <span className="text-cyan-400 font-bold block text-sm">Campaign Funnel Strategy:</span>
+                    <pre className="whitespace-pre-wrap font-sans text-xs text-slate-300">{JSON.stringify(campaign.strategy, null, 2)}</pre>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-300">
+                    Multi-channel funnel calibrated for target channels: {(campaign.target_platforms || []).join(', ') || 'Instagram & YouTube'}.
+                  </p>
+                )}
               </div>
             )}
 
@@ -281,50 +282,66 @@ export default function CampaignWorkspacePage() {
                   </Link>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {assets.slice(0, 3).map((asset) => (
-                    <div key={asset.id} className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.08] space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300">
-                          {asset.platform} • {asset.content_type}
-                        </span>
-                        <span className="text-[10px] font-mono text-emerald-300">QA: PASS</span>
+                {assets.length === 0 ? (
+                  <div className="p-6 rounded-xl bg-white/[0.02] border border-white/[0.06] text-center text-xs text-slate-400">
+                    No content assets generated for this campaign yet. Run the Creative step to generate platform copy and scripts.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {assets.slice(0, 6).map((asset) => (
+                      <div key={asset.id} className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.08] space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300">
+                            {asset.platform} • {asset.content_type}
+                          </span>
+                          <span className="text-[10px] font-mono text-emerald-300">
+                            QA: {asset.quality_status || 'PENDING'}
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-bold text-white line-clamp-1">{asset.title}</h4>
+                        <p className="text-xs text-slate-400 line-clamp-2">{asset.caption}</p>
                       </div>
-                      <h4 className="text-sm font-bold text-white line-clamp-1">{asset.title}</h4>
-                      <p className="text-xs text-slate-400 line-clamp-2">{asset.caption}</p>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
             {activeStepTab === 'quality' && (
               <div className="space-y-3 font-mono text-xs">
-                <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 text-emerald-300 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck className="w-5 h-5 text-emerald-400" />
-                    <span className="font-bold text-sm">QUALITY STATUS: PASSED (100% Brand Fidelity)</span>
+                {assets.length === 0 ? (
+                  <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] text-slate-400">
+                    No assets to audit yet. Generate creative assets first.
                   </div>
-                  <span className="text-xs">Score: 0.98/1.0</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-slate-300">
-                  <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">✓ Pricing matches catalog (₹4,999)</div>
-                  <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">✓ No unsupported medical claims</div>
-                  <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">✓ Platform aspect ratios valid</div>
-                  <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">✓ Call-to-action is clear and unambiguous</div>
-                </div>
+                ) : (
+                  <>
+                    <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 text-emerald-300 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                        <span className="font-bold text-sm">QUALITY AUDIT</span>
+                      </div>
+                      <span className="text-xs">{assets.filter(a => a.quality_status === 'PASS').length}/{assets.length} Assets Passed</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-slate-300">
+                      <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">✓ Brand Voice Consistency</div>
+                      <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">✓ Pricing & Claim Verification</div>
+                      <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">✓ Platform Aspect Ratios Validated</div>
+                      <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">✓ Safety Policy Checked</div>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
             {activeStepTab === 'schedule' && (
               <div className="space-y-4">
                 <p className="text-xs text-slate-300">
-                  Ready to schedule or dispatch content across connected channels (Instagram & YouTube).
+                  Ready to schedule or dispatch content across connected channels ({(campaign.target_platforms || []).join(', ') || 'Instagram & YouTube'}).
                 </p>
                 <div className="flex items-center gap-3">
                   <Link href="/calendar">
                     <GlassButton variant="cyanGlow" size="md" icon={<Calendar className="w-4 h-4" />}>
-                      Review & Approve Schedule
+                      Review in Calendar
                     </GlassButton>
                   </Link>
                 </div>

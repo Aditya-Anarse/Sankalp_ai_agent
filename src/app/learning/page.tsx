@@ -1,37 +1,43 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { WorkspaceSidebar } from '@/components/workspace/WorkspaceSidebar';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { GlassButton } from '@/components/ui/GlassButton';
 import { useApp } from '@/context/AppContext';
+import { api } from '@/lib/api';
 import {
   Lightbulb,
   Sparkles,
-  ArrowRight,
-  TrendingUp,
-  CheckCircle2,
   RefreshCw,
   ShieldCheck,
-  Cpu,
-  Layers,
-  Zap,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function LearningCenterPage() {
-  const { learningInsights, business } = useApp();
+  const { learningInsights, refreshAll } = useApp();
   const [analyzing, setAnalyzing] = useState(false);
-  const [analyzedSuccess, setAnalyzedSuccess] = useState(false);
+  const [feedback, setFeedback] = useState<{ message: string; isError?: boolean } | null>(null);
 
   const handleTriggerAnalysis = async () => {
     setAnalyzing(true);
-    setTimeout(() => {
+    setFeedback(null);
+    try {
+      const res = await api.learning.analyze();
+      if (res.status === 'insufficient_data') {
+        setFeedback({ message: res.message, isError: true });
+      } else {
+        setFeedback({ message: res.message || 'Learning Agent analysis completed.' });
+        await refreshAll();
+      }
+    } catch (err: any) {
+      setFeedback({ message: err.message || 'Failed to trigger learning analysis', isError: true });
+    } finally {
       setAnalyzing(false);
-      setAnalyzedSuccess(true);
-      setTimeout(() => setAnalyzedSuccess(false), 4000);
-    }, 1500);
+    }
   };
 
   return (
@@ -48,7 +54,7 @@ export default function LearningCenterPage() {
             <div>
               <h1 className="text-sm font-bold text-white">SANKALP Learning Center</h1>
               <span className="text-[11px] font-mono text-slate-400">
-                Continuous Autonomous Reinforcement & Heuristic Calibration
+                Empirical Performance Signals & Adaptive Optimization
               </span>
             </div>
           </div>
@@ -60,19 +66,24 @@ export default function LearningCenterPage() {
             disabled={analyzing}
             icon={<RefreshCw className={`w-3.5 h-3.5 ${analyzing ? 'animate-spin' : ''}`} />}
           >
-            {analyzing ? 'Synthesizing Heuristics...' : 'Run Autonomous Learning Agent'}
+            {analyzing ? 'Analyzing Performance...' : 'Run Learning Agent'}
           </GlassButton>
         </header>
 
         {/* Learning Body */}
         <main className="flex-1 p-6 sm:p-8 max-w-7xl w-full mx-auto space-y-6 text-left">
-          {analyzedSuccess && (
+          {feedback && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-400 text-emerald-200 text-xs font-mono"
+              className={`p-4 rounded-xl text-xs font-mono border flex items-center justify-between ${
+                feedback.isError
+                  ? 'bg-amber-950/40 border-amber-500/40 text-amber-200'
+                  : 'bg-emerald-950/40 border-emerald-400 text-emerald-200'
+              }`}
             >
-              ✓ SANKALP Learning Agent synthesized 3 new heuristic insights and calibrated future campaign prompts.
+              <span>{feedback.message}</span>
+              <button onClick={() => setFeedback(null)} className="text-slate-400 hover:text-white">✕</button>
             </motion.div>
           )}
 
@@ -81,94 +92,79 @@ export default function LearningCenterPage() {
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-cyan-300" />
               <h2 className="text-base font-bold text-white">
-                How SANKALP Learns From Your Business
+                Empirical Learning System
               </h2>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Every completed campaign, audience interaction, hook retention slope, and quality audit feeds directly back into SANKALP's structured business memory. When planning your next campaign, SANKALP applies these empirical findings to maximize return on effort.
+              Learning insights are generated strictly from verified post performance and engagement data. SANKALP compares reach, watch-time, and conversion ratios across content formats to systematically improve subsequent campaign strategies.
             </p>
             <div className="pt-2 flex items-center gap-3 text-[11px] font-mono text-cyan-300">
-              <span>• Zero Hallucinated Causality</span>
+              <span>• Zero Fabricated Insights</span>
               <span>• Strict Evidence Anchoring</span>
-              <span>• Continuous Prompt Refinement</span>
+              <span>• Real Platform Telemetry</span>
             </div>
           </GlassCard>
 
-          {/* Synthesized Insights Grid */}
+          {/* Synthesized Insights Grid or Empty State */}
           <div className="space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
               <h3 className="text-xs font-mono uppercase tracking-wider text-slate-300 font-bold">
-                Active Strategic Insights ({learningInsights.length})
+                Derived Insights ({learningInsights.length})
               </h3>
-              <span className="text-[10px] font-mono text-slate-500">
-                Confidence Threshold &gt; 75%
-              </span>
             </div>
 
-            <div className="space-y-4">
-              {learningInsights.map((item) => (
-                <GlassCard
-                  key={item.id}
-                  className="p-6 border-white/[0.08] hover:border-cyan-500/40 transition-all space-y-4 text-left"
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-                          {item.category.replace('_', ' ')}
-                        </span>
-                        <span className="text-[10px] font-mono text-emerald-400">
-                          Confidence: {Math.round(item.confidence_score * 100)}%
-                        </span>
-                      </div>
-                      <h4 className="text-sm sm:text-base font-bold text-white leading-snug">
-                        "{item.insight}"
-                      </h4>
+            {learningInsights.length === 0 ? (
+              <GlassCard className="p-12 text-center border-dashed border-white/[0.1] space-y-4">
+                <div className="w-12 h-12 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center text-slate-400 mx-auto">
+                  <Lightbulb className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-bold text-white">
+                    Not enough performance data to generate learning insights.
+                  </h3>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto">
+                    Publish content through your connected social accounts. As performance metrics accumulate, the Learning Agent will derive strategic insights.
+                  </p>
+                </div>
+                <div className="pt-2">
+                  <Link href="/workspace/ai-manager">
+                    <GlassButton variant="cyanGlow" size="sm">
+                      Create a Campaign
+                    </GlassButton>
+                  </Link>
+                </div>
+              </GlassCard>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {learningInsights.map((item) => (
+                  <GlassCard
+                    key={item.id}
+                    className="p-6 border-white/[0.08] space-y-4 flex flex-col justify-between"
+                  >
+                    <div className="space-y-3">
+                      <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                        {item.category}
+                      </span>
+                      <h4 className="text-sm font-bold text-white">{item.insight}</h4>
+                      {item.evidence && item.evidence.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-mono uppercase text-slate-400 block">Evidence:</span>
+                          <ul className="text-xs text-slate-400 list-disc list-inside space-y-0.5">
+                            {item.evidence.map((ev, i) => (
+                              <li key={i}>{ev}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
 
-                    <span className="text-[10px] font-mono px-2 py-1 rounded bg-white/[0.04] text-slate-400 border border-white/[0.08] flex-shrink-0">
-                      Calibrating Next Sprint
-                    </span>
-                  </div>
-
-                  {/* Empirical Evidence */}
-                  <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-2">
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold block">
-                      Empirical Evidence:
-                    </span>
-                    <ul className="space-y-1 text-xs text-slate-300 font-mono">
-                      {item.evidence.map((ev, idx) => (
-                        <li key={idx} className="flex items-start gap-2">
-                          <span className="text-cyan-400">→</span>
-                          <span>{ev}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Operational Recommendation */}
-                  <div className="p-3.5 rounded-xl bg-cyan-950/20 border border-cyan-500/20 flex items-start gap-2.5 text-xs text-cyan-200">
-                    <TrendingUp className="w-4 h-4 text-cyan-400 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <strong className="text-white block font-sans">SANKALP Action Plan:</strong>
-                      <p className="mt-0.5 leading-relaxed">{item.recommendation}</p>
+                    <div className="pt-3 border-t border-white/[0.06] text-xs font-mono text-cyan-300">
+                      Recommendation: {item.recommendation}
                     </div>
-                  </div>
-                </GlassCard>
-              ))}
-            </div>
-          </div>
-
-          {/* Bottom SANKALP Quote */}
-          <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between">
-            <p className="text-xs text-slate-300 italic">
-              "I'll automatically use these learnings when structuring and copywriting your future campaigns."
-            </p>
-            <Link href="/workspace/ai-manager">
-              <GlassButton variant="cyanGlow" size="sm" icon={<ArrowRight className="w-3.5 h-3.5" />}>
-                Launch New AI Campaign
-              </GlassButton>
-            </Link>
+                  </GlassCard>
+                ))}
+              </div>
+            )}
           </div>
         </main>
       </div>

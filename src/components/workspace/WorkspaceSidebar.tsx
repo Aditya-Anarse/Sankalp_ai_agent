@@ -79,12 +79,12 @@ export function WorkspaceSidebar({ activeTab: propActiveTab }: WorkspaceSidebarP
             Active Workspace
           </span>
           <p className="text-xs font-bold text-white truncate">
-            {state.businessProfile.businessName || user?.businessName || "ABC Fashion Store"}
+            {state.businessProfile.businessName || user?.businessName || "My Business"}
           </p>
           <div className="flex items-center gap-1.5 mt-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-[10px] font-mono text-slate-400">
-              {state.businessProfile.businessType || "Fashion & Apparel"}
+              {state.businessProfile.businessType || "D2C Brand"}
             </span>
           </div>
         </div>

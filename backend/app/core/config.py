@@ -26,11 +26,12 @@ class Settings(BaseSettings):
     DATABASE_URL: str = _clean_env("DATABASE_URL", "sqlite:///./sankalp.db")
     
     # AI Providers
-    AI_PROVIDER: str = _clean_env("AI_PROVIDER", "mock")  # mock | gemini | groq
+    AI_PROVIDER: str = _clean_env("AI_PROVIDER", "gemini")  # gemini | groq
     GEMINI_API_KEY: Optional[str] = _clean_env("GEMINI_API_KEY")
     GROQ_API_KEY: Optional[str] = _clean_env("GROQ_API_KEY")
     
     # Social Integrations
+    INSTAGRAM_API_VERSION: str = _clean_env("INSTAGRAM_API_VERSION", "v19.0")
     INSTAGRAM_CLIENT_ID: Optional[str] = _clean_env("INSTAGRAM_CLIENT_ID")
     INSTAGRAM_CLIENT_SECRET: Optional[str] = _clean_env("INSTAGRAM_CLIENT_SECRET")
     INSTAGRAM_REDIRECT_URI: str = _clean_env("INSTAGRAM_REDIRECT_URI", "http://localhost:8000/social-accounts/instagram/callback")

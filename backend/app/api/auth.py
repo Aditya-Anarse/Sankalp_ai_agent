@@ -105,48 +105,15 @@ async def login(
 
     user = db.query(User).filter(User.email == email).first()
 
-    if not user:
-        if email == "demo@sankalp.ai" and password == "sankalp2026":
-            # Auto-seed demo user if database was fresh
-            user = User(
-                id="usr-demo-001",
-                email="demo@sankalp.ai",
-                name="Aditya Sharma",
-                hashed_password=get_password_hash("sankalp2026"),
-                is_active=True,
-                created_at=datetime.utcnow()
-            )
-            db.add(user)
-            db.commit()
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password."
-            )
-    else:
-        if not verify_password(password, user.hashed_password):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password."
-            )
+    if not user or not verify_password(password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password."
+        )
 
     business = db.query(Business).filter(Business.owner_id == user.id).first()
-    if not business:
-        business = db.query(Business).filter(Business.name == "ABC Fashion Store").first()
-    if not business:
-        business = db.query(Business).first()
-    if not business:
-        business = Business(
-            id=f"biz_{int(time.time()*1000)}",
-            owner_id=user.id,
-            name="ABC Fashion Store",
-            business_type="Fashion & Apparel",
-            location="Bengaluru, India"
-        )
-        db.add(business)
-        db.commit()
-    business_id = business.id
-    business_name = business.name
+    business_id = business.id if business else None
+    business_name = business.name if business else None
 
     token = create_access_token(user.id)
     return {
@@ -166,32 +133,43 @@ def get_current_user(
     token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ) -> User:
-    if token:
-        try:
-            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
-            user_id: str = payload.get("sub")
-            if user_id:
-                user = db.query(User).filter(User.id == user_id).first()
-                if user:
-                    return user
-        except JWTError:
-            pass
-
-    # Fallback to demo user for resilient local testing if no valid token
-    user = db.query(User).filter(User.email == "demo@sankalp.ai").first()
-    if not user:
-        user = db.query(User).first()
-    if not user:
-        user = User(
-            id="usr_demo_001",
-            email="demo@sankalp.ai",
-            name="Aditya Sharma",
-            hashed_password=get_password_hash("sankalp2026"),
-            is_active=True,
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-        db.add(user)
-        db.commit()
-    return user
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        user_id: str = payload.get("sub")
+        if user_id:
+            user = db.query(User).filter(User.id == user_id).first()
+            if user:
+                return user
+    except JWTError:
+        pass
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def get_optional_current_user(
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        user_id: str = payload.get("sub")
+        if user_id:
+            return db.query(User).filter(User.id == user_id).first()
+    except JWTError:
+        pass
+    return None
 
 
 @router.get("/me")
@@ -200,25 +178,12 @@ def get_current_user_profile(
     db: Session = Depends(get_db)
 ):
     business = db.query(Business).filter(Business.owner_id == user.id).first()
-    if not business:
-        business = db.query(Business).filter(Business.name == "ABC Fashion Store").first()
-    if not business:
-        business = db.query(Business).first()
-    if not business:
-        business = Business(
-            id=f"biz_{int(time.time()*1000)}",
-            owner_id=user.id,
-            name="ABC Fashion Store",
-            business_type="Fashion & Apparel",
-            location="Bengaluru, India"
-        )
-        db.add(business)
-        db.commit()
     return {
         "id": user.id,
         "name": user.name,
         "email": user.email,
-        "business_id": business.id,
-        "business_name": business.name,
+        "business_id": business.id if business else None,
+        "business_name": business.name if business else None,
     }
+
 

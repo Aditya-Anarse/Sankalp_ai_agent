@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { WorkspaceSidebar } from '@/components/workspace/WorkspaceSidebar';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { GlassButton } from '@/components/ui/GlassButton';
 import { useApp } from '@/context/AppContext';
+import { api } from '@/lib/api';
 import {
   Bot,
   Sparkles,
@@ -16,20 +17,18 @@ import {
   ArrowRight,
   Flame,
   ShieldCheck,
-  Film,
-  Lightbulb,
-  Cpu,
-  Layers,
-  Zap,
+  AlertTriangle,
+  Settings,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 interface Message {
   id: string;
-  sender: 'user' | 'sankalp';
+  sender: 'user' | 'sankalp' | 'system';
   text: string;
   timestamp: string;
-  steps?: { label: string; status: 'completed' | 'in_progress' | 'pending' }[];
+  isError?: boolean;
+  steps?: { label: string; status: 'completed' | 'in_progress' | 'pending' | 'failed' }[];
   campaignReady?: {
     id: string;
     name: string;
@@ -43,27 +42,78 @@ export default function AIManagerPage() {
   const { business, products, createCampaignChat } = useApp();
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [activeStepIndex, setActiveStepIndex] = useState(0);
+  const [aiConfigured, setAiConfigured] = useState<boolean | null>(null);
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'm1',
-      sender: 'sankalp',
-      text: `Good morning! I am SANKALP, your autonomous AI marketing employee. I have your business context for ${business.name}, your ${products.length} products, and audience targets loaded into active memory.\n\nTell me what you'd like to achieve:`,
-      timestamp: '10:00 AM',
+  useEffect(() => {
+    // Check AI Provider configuration status
+    fetch('http://localhost:8000/ai/status')
+      .then((res) => res.json())
+      .then((data) => {
+        setAiConfigured(data.configured);
+      })
+      .catch(() => {
+        setAiConfigured(true);
+      });
+  }, []);
+
+  const businessName = business.name || '';
+  const isBusinessConfigured = Boolean(businessName);
+
+  const [messages, setMessages] = useState<Message[]>([]);
+
+  useEffect(() => {
+    if (!isBusinessConfigured) {
+      setMessages([
+        {
+          id: 'm-setup',
+          sender: 'sankalp',
+          text: 'Welcome to SANKALP. Complete your business setup before starting an AI campaign.',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
+    } else {
+      setMessages([
+        {
+          id: 'm1',
+          sender: 'sankalp',
+          text: `Good morning! I am SANKALP, your autonomous AI marketing employee. I have your business context for ${businessName}, your ${products.length} products, and brand target rules loaded.\n\nWhat marketing campaign or editorial objective should we execute today?`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
     }
-  ]);
+  }, [isBusinessConfigured, businessName, products.length]);
 
   const quickPrompts = [
-    'New summer collection launched. Create a 5-day Instagram campaign.',
-    'Promote my Urban Glide sneakers with high-retention Reels.',
-    'Plan my editorial content calendar for this week.',
-    'Launch a 48-hour flash offer campaign on Instagram & YouTube.',
+    'Create a 5-day multi-channel campaign for our product drop.',
+    'Promote our flagship products with high-retention Reels and carousels.',
+    'Plan our editorial content calendar for this week.',
+    'Launch a 48-hour promotional offer sequence.',
   ];
 
   const handleSend = async (customText?: string) => {
     const textToSend = customText || input;
     if (!textToSend.trim() || loading) return;
+
+    if (!isBusinessConfigured) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `usr-${Date.now()}`,
+          sender: 'user',
+          text: textToSend,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+        {
+          id: `sys-${Date.now()}`,
+          sender: 'system',
+          text: 'Complete your business setup before starting an AI campaign.',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isError: true,
+        },
+      ]);
+      setInput('');
+      return;
+    }
 
     const userMsg: Message = {
       id: `usr-${Date.now()}`,
@@ -76,15 +126,14 @@ export default function AIManagerPage() {
     const initialSankalpMsg: Message = {
       id: sankalpMsgId,
       sender: 'sankalp',
-      text: 'Understanding your request and synthesizing business constraints...',
+      text: 'Analyzing directive against your brand profile and executing the 7-agent pipeline...',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       steps: [
-        { label: 'Business context & brand voice loaded', status: 'completed' },
-        { label: 'Product catalog & pricing loaded', status: 'completed' },
-        { label: 'Research Agent: Analyzing content opportunities', status: 'in_progress' },
-        { label: 'Strategy Agent: Structuring multi-day funnel', status: 'pending' },
-        { label: 'Creative Agent: Generating hooks & scripts', status: 'pending' },
-        { label: 'Quality Agent: Auditing brand tone & character limits', status: 'pending' },
+        { label: 'Business context & brand parameters verified', status: 'completed' },
+        { label: 'Research Agent: Extracting market signals', status: 'in_progress' },
+        { label: 'Strategy Agent: Structuring editorial roadmap', status: 'pending' },
+        { label: 'Creative Agent: Writing hooks, scripts & visual copy', status: 'pending' },
+        { label: 'Quality Agent: Brand audit & compliance check', status: 'pending' },
       ],
     };
 
@@ -93,68 +142,42 @@ export default function AIManagerPage() {
     setLoading(true);
 
     try {
-      // Step simulation timeline for high-fidelity interactive feel
-      setTimeout(() => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === sankalpMsgId && m.steps
-              ? {
-                  ...m,
-                  steps: m.steps.map((s, idx) =>
-                    idx <= 2
-                      ? { ...s, status: 'completed' }
-                      : idx === 3
-                      ? { ...s, status: 'in_progress' }
-                      : s
-                  ),
-                }
-              : m
-          )
-        );
-      }, 700);
-
-      setTimeout(() => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === sankalpMsgId && m.steps
-              ? {
-                  ...m,
-                  steps: m.steps.map((s, idx) =>
-                    idx <= 4
-                      ? { ...s, status: 'completed' }
-                      : idx === 5
-                      ? { ...s, status: 'in_progress' }
-                      : s
-                  ),
-                }
-              : m
-          )
-        );
-      }, 1500);
-
       const res = await createCampaignChat(textToSend);
 
-      setTimeout(() => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === sankalpMsgId
-              ? {
-                  ...m,
-                  text: res.response || 'Campaign generation complete! All 7 specialized agents have executed their pipelines.',
-                  steps: m.steps?.map((s) => ({ ...s, status: 'completed' })),
-                  campaignReady: {
-                    id: res.campaign_id || 'camp-001',
-                    name: res.campaign_name || textToSend,
-                    contentCount: res.workflow_summary?.content_count || 3,
-                    preview: res.content_preview || [],
-                  },
-                }
-              : m
-          )
-        );
-        setLoading(false);
-      }, 2200);
-    } catch (e) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === sankalpMsgId
+            ? {
+                ...m,
+                text: res.response || 'Campaign execution complete. All 7 agents have executed in sequence.',
+                steps: m.steps?.map((s) => ({ ...s, status: 'completed' })),
+                campaignReady: {
+                  id: res.campaign_id,
+                  name: res.campaign_name || textToSend,
+                  contentCount: res.workflow_summary?.content_count || 0,
+                  preview: res.content_preview || [],
+                },
+              }
+            : m
+        )
+      );
+      setLoading(false);
+    } catch (err: any) {
+      const errorMsg = err.message || 'Error occurred';
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === sankalpMsgId
+            ? {
+                ...m,
+                text: errorMsg.includes('AI provider is not configured')
+                  ? 'AI Service Not Configured. Please set GEMINI_API_KEY or GROQ_API_KEY in your environment configuration to enable AI generation.'
+                  : `Execution stopped: ${errorMsg}`,
+                isError: true,
+                steps: m.steps?.map((s) => (s.status === 'in_progress' ? { ...s, status: 'failed' } : s)),
+              }
+            : m
+        )
+      );
       setLoading(false);
     }
   };
@@ -172,77 +195,101 @@ export default function AIManagerPage() {
             </div>
             <div>
               <h1 className="text-sm font-bold text-white flex items-center gap-2">
-                <span>SANKALP AI</span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
-                  ● ACTIVE EMPLOYEE
-                </span>
+                <span>SANKALP AI Manager</span>
+                {aiConfigured === false ? (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/10 text-red-300 border border-red-500/30">
+                    AI NOT CONFIGURED
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                    ● ACTIVE
+                  </span>
+                )}
               </h1>
               <span className="text-[11px] font-mono text-slate-400 block -mt-0.5">
-                Autonomous Marketing Orchestration Engine
+                Autonomous Executive Coordinating 7 Specialized Agents
               </span>
             </div>
           </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-white/[0.04] text-slate-400 border border-white/[0.08]">
-              Review Mode (Human-in-the-loop)
-            </span>
-          </div>
         </header>
 
-        {/* Chat Area */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-5xl w-full mx-auto flex flex-col justify-between space-y-6">
-          <div className="space-y-6 flex-1 overflow-y-auto pr-1">
+        {/* Warning Banner if AI is not configured */}
+        {aiConfigured === false && (
+          <div className="bg-amber-950/30 border-b border-amber-500/30 px-6 py-3 flex items-center justify-between text-xs font-mono text-amber-200">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              <span>AI Service Not Configured: Set GEMINI_API_KEY or GROQ_API_KEY in your environment to activate AI generation.</span>
+            </div>
+          </div>
+        )}
+
+        {/* Warning Banner if Business is not configured */}
+        {!isBusinessConfigured && (
+          <div className="bg-cyan-950/40 border-b border-cyan-500/30 px-6 py-3 flex items-center justify-between text-xs font-mono text-cyan-200">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+              <span>No business configured yet. Complete setup to run autonomous marketing campaigns.</span>
+            </div>
+            <Link href="/onboarding/business">
+              <GlassButton variant="cyanGlow" size="sm">
+                Complete Business Setup
+              </GlassButton>
+            </Link>
+          </div>
+        )}
+
+        {/* Chat Stream */}
+        <main className="flex-1 p-6 sm:p-8 max-w-4xl w-full mx-auto flex flex-col justify-between space-y-6">
+          <div className="space-y-4 flex-1 overflow-y-auto">
             {messages.map((m) => (
               <motion.div
                 key={m.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className={`flex gap-3.5 ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex gap-3 ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                {m.sender === 'sankalp' && (
-                  <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-400/30 flex items-center justify-center text-cyan-300 flex-shrink-0 mt-1">
-                    <Sparkles className="w-4 h-4" />
+                {m.sender !== 'user' && (
+                  <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 flex-shrink-0 mt-1">
+                    <Bot className="w-4 h-4" />
                   </div>
                 )}
 
-                <div className={`max-w-2xl ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
+                <div className={`max-w-2xl text-left ${m.sender === 'user' ? 'order-1' : 'order-2'}`}>
                   <GlassCard
-                    className={`p-5 text-left ${
+                    className={`p-4 sm:p-5 ${
                       m.sender === 'user'
-                        ? 'bg-cyan-950/40 border-cyan-500/40 text-cyan-50'
-                        : 'bg-white/[0.03] border-white/[0.08] text-slate-200'
+                        ? 'bg-cyan-500/10 border-cyan-500/30 text-white'
+                        : m.isError
+                        ? 'bg-red-950/30 border-red-500/30 text-red-200'
+                        : 'border-white/[0.08] text-slate-200'
                     }`}
                   >
                     <p className="text-xs sm:text-sm leading-relaxed whitespace-pre-line">{m.text}</p>
 
-                    {/* Multi-Agent Execution Telemetry Steps */}
+                    {/* Step progress indicators */}
                     {m.steps && (
-                      <div className="mt-4 pt-4 border-t border-white/[0.08] space-y-2 font-mono text-xs">
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 block mb-2">
-                          Agent Execution Matrix:
+                      <div className="mt-4 pt-4 border-t border-white/[0.06] space-y-2">
+                        <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block font-semibold">
+                          7-Agent Autonomous Pipeline Execution:
                         </span>
-                        {m.steps.map((step, sIdx) => (
-                          <div
-                            key={sIdx}
-                            className="flex items-center justify-between py-1 px-2 rounded bg-white/[0.02] border border-white/[0.04]"
-                          >
-                            <span className="flex items-center gap-2 text-slate-300">
-                              {step.status === 'completed' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
-                              {step.status === 'in_progress' && <Clock className="w-3.5 h-3.5 text-cyan-400 animate-spin" />}
-                              {step.status === 'pending' && <span className="w-3.5 h-3.5 rounded-full border border-slate-600 inline-block" />}
-                              <span>{step.label}</span>
-                            </span>
+                        {m.steps.map((st, i) => (
+                          <div key={i} className="flex items-center gap-2 text-xs font-mono">
+                            {st.status === 'completed' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />}
+                            {st.status === 'in_progress' && <Clock className="w-3.5 h-3.5 text-cyan-400 animate-spin flex-shrink-0" />}
+                            {st.status === 'pending' && <span className="w-3.5 h-3.5 rounded-full border border-slate-600 flex-shrink-0" />}
+                            {st.status === 'failed' && <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />}
                             <span
-                              className={`text-[9px] uppercase px-1.5 py-0.5 rounded ${
-                                step.status === 'completed'
-                                  ? 'bg-emerald-500/10 text-emerald-300'
-                                  : step.status === 'in_progress'
-                                  ? 'bg-cyan-500/10 text-cyan-300'
-                                  : 'text-slate-600'
-                              }`}
+                              className={
+                                st.status === 'completed'
+                                  ? 'text-slate-300'
+                                  : st.status === 'in_progress'
+                                  ? 'text-cyan-300 font-semibold'
+                                  : st.status === 'failed'
+                                  ? 'text-red-300 font-semibold'
+                                  : 'text-slate-500'
+                              }
                             >
-                              {step.status}
+                              {st.label}
                             </span>
                           </div>
                         ))}
@@ -251,32 +298,24 @@ export default function AIManagerPage() {
 
                     {/* Campaign Ready Card */}
                     {m.campaignReady && (
-                      <div className="mt-4 pt-4 border-t border-cyan-500/20 bg-cyan-950/20 p-4 rounded-xl border border-cyan-500/30 space-y-3">
+                      <div className="mt-4 p-4 rounded-xl bg-cyan-950/30 border border-cyan-500/30 space-y-3">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-white">CAMPAIGN SYNTHESIZED</span>
-                            <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
-                              ALL QA PASSED (PASS)
-                            </span>
-                          </div>
-                          <span className="text-[10px] font-mono text-cyan-300">
-                            {m.campaignReady.contentCount} Assets Generated
+                          <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <Flame className="w-3.5 h-3.5 text-cyan-400" />
+                            {m.campaignReady.name}
+                          </span>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+                            Ready for Review
                           </span>
                         </div>
-
                         <p className="text-xs text-slate-300">
-                          Strategy, hooks, carousels, and QA verified. Ready for business owner approval or scheduling.
+                          {m.campaignReady.contentCount} platform content assets generated and audited by Quality Agent.
                         </p>
-
-                        <div className="flex items-center gap-3 pt-2">
-                          <Link href={`/campaigns/${m.campaignReady.id}`}>
-                            <GlassButton variant="cyanGlow" size="sm" icon={<ArrowRight className="w-3.5 h-3.5" />}>
-                              Review Campaign Timeline
-                            </GlassButton>
-                          </Link>
+                        <div className="flex items-center gap-2 pt-1">
                           <Link href="/content-studio">
-                            <GlassButton variant="outline" size="sm">
-                              Open in Content Studio
+                            <GlassButton variant="cyanGlow" size="sm" className="flex items-center gap-1.5">
+                              <span>Open Content Studio</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
                             </GlassButton>
                           </Link>
                         </div>
@@ -292,10 +331,10 @@ export default function AIManagerPage() {
             ))}
           </div>
 
-          {/* Quick Prompts & Input Bar */}
+          {/* Suggested Directives & Input Bar */}
           <div className="space-y-3 pt-2 border-t border-white/[0.08]">
             <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-              <span className="text-[10px] font-mono text-slate-500 flex-shrink-0">Demo Prompts:</span>
+              <span className="text-[10px] font-mono text-slate-500 flex-shrink-0">Suggested Directives:</span>
               {quickPrompts.map((qp, idx) => (
                 <button
                   key={idx}
@@ -314,19 +353,19 @@ export default function AIManagerPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                placeholder="Instruct SANKALP (e.g. 'Create a 5-day campaign for our new shoes')..."
+                placeholder="Instruct SANKALP AI Manager (e.g. 'Create a 5-day campaign for our new drop')..."
                 disabled={loading}
                 className="flex-1 bg-white/[0.03] border border-white/[0.1] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 transition-colors font-sans"
               />
-
               <GlassButton
                 variant="cyanGlow"
                 size="md"
                 onClick={() => handleSend()}
                 disabled={loading || !input.trim()}
-                icon={<Send className="w-4 h-4" />}
+                className="flex items-center gap-1.5"
               >
-                {loading ? 'Synthesizing...' : 'Send'}
+                <span>Dispatch</span>
+                <Send className="w-3.5 h-3.5" />
               </GlassButton>
             </div>
           </div>

@@ -6,6 +6,7 @@ import { WorkspaceSidebar } from '@/components/workspace/WorkspaceSidebar';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { GlassButton } from '@/components/ui/GlassButton';
 import { useApp } from '@/context/AppContext';
+import { api } from '@/lib/api';
 import {
   Settings,
   Sparkles,
@@ -24,21 +25,71 @@ export default function BrandSettingsPage() {
   const [saved, setSaved] = useState(false);
 
   const [formData, setFormData] = useState({
-    name: business.name,
-    industry: business.industry,
-    website: business.website,
-    description: business.description,
-    location: business.location,
-    brandTone: 'Bold, premium, energetic, authentic, conversational',
-    tagline: 'Engineered for Everyday Movement.',
-    targetDemographics: '21-35 years, Urban Professionals & Creators',
-    autoPublish: business.auto_publish_enabled,
+    name: business.name || '',
+    industry: business.industry || '',
+    website: business.website || '',
+    description: business.description || '',
+    location: business.location || '',
+    brandTone: '',
+    tagline: '',
+    targetDemographics: '',
+    autoPublish: business.auto_publish_enabled || false,
   });
 
-  const handleSave = (e: React.FormEvent) => {
+  React.useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      name: business.name || '',
+      industry: business.industry || '',
+      website: business.website || '',
+      description: business.description || '',
+      location: business.location || '',
+      autoPublish: business.auto_publish_enabled || false,
+    }));
+
+    api.business.getBrand().then((b) => {
+      if (b) {
+        setFormData((prev) => ({
+          ...prev,
+          brandTone: Array.isArray(b.tones) ? b.tones.join(', ') : '',
+          tagline: b.tagline || '',
+        }));
+      }
+    }).catch(() => {});
+
+    api.business.getAudience().then((aud) => {
+      if (aud) {
+        setFormData((prev) => ({
+          ...prev,
+          targetDemographics: aud.description || (Array.isArray(aud.age_demographics) ? aud.age_demographics.join(', ') : ''),
+        }));
+      }
+    }).catch(() => {});
+  }, [business]);
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    try {
+      await api.business.update({
+        name: formData.name,
+        business_type: formData.industry,
+        website: formData.website,
+        description: formData.description,
+        location: formData.location,
+        auto_publish_enabled: formData.autoPublish,
+      });
+      await api.business.updateBrand({
+        tones: formData.brandTone.split(',').map((t) => t.trim()).filter(Boolean),
+        tagline: formData.tagline,
+      });
+      await api.business.updateAudience({
+        description: formData.targetDemographics,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      console.error('Failed to update brand settings:', err);
+    }
   };
 
   return (

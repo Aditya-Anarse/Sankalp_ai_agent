@@ -80,44 +80,65 @@ export default function AgentActivityPage() {
             </span>
           </div>
 
-          {/* Activity Log Stream */}
-          <div className="space-y-3">
-            {filteredLogs.map((log) => (
-              <GlassCard
-                key={log.id}
-                className="p-5 border-white/[0.08] hover:border-cyan-500/30 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-              >
-                <div className="flex items-start gap-3.5">
-                  <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center text-cyan-300 flex-shrink-0 mt-0.5">
-                    <Bot className="w-4 h-4" />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-white">{log.agent_name}</span>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
-                        {log.status.toUpperCase()}
-                      </span>
-                      {log.campaign_id && (
-                        <span className="text-[10px] font-mono text-slate-400">
-                          [{log.campaign_id}]
-                        </span>
-                      )}
+          {/* Activity Log Stream or Empty State */}
+          {filteredLogs.length === 0 ? (
+            <GlassCard className="p-12 text-center border-dashed border-white/[0.1] space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center text-slate-400 mx-auto">
+                <Bot className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-white">No agent activity yet.</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  When the 7 specialized agents execute campaigns, research market signals, or audit content, their real execution traces will appear here.
+                </p>
+              </div>
+              <div className="pt-2">
+                <Link href="/workspace/ai-manager">
+                  <GlassButton variant="cyanGlow" size="sm">
+                    Run AI Campaign
+                  </GlassButton>
+                </Link>
+              </div>
+            </GlassCard>
+          ) : (
+            <div className="space-y-3">
+              {filteredLogs.map((log) => (
+                <GlassCard
+                  key={log.id}
+                  className="p-5 border-white/[0.08] hover:border-cyan-500/30 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                >
+                  <div className="flex items-start gap-3.5">
+                    <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center text-cyan-300 flex-shrink-0 mt-0.5">
+                      <Bot className="w-4 h-4" />
                     </div>
 
-                    <p className="text-xs text-slate-300 font-mono leading-relaxed">
-                      {log.details}
-                    </p>
-                  </div>
-                </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-white">{log.agent_name}</span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                          {log.status.toUpperCase()}
+                        </span>
+                        {log.campaign_id && (
+                          <span className="text-[10px] font-mono text-slate-400">
+                            [{log.campaign_id}]
+                          </span>
+                        )}
+                      </div>
 
-                <div className="flex sm:flex-col items-end justify-between sm:justify-center gap-1 font-mono text-xs text-slate-400 flex-shrink-0">
-                  <span className="text-cyan-300">{log.created_at}</span>
-                  <span className="text-[10px] text-slate-500">Duration: {log.duration_seconds}s</span>
-                </div>
-              </GlassCard>
-            ))}
-          </div>
+                      <p className="text-xs text-slate-300 font-mono leading-relaxed">
+                        {log.details}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex sm:flex-col items-end justify-between sm:justify-center gap-1 font-mono text-xs text-slate-400 flex-shrink-0">
+                    <span className="text-cyan-300">{log.created_at}</span>
+                    <span className="text-[10px] text-slate-500">Duration: {log.duration_seconds}s</span>
+                  </div>
+                </GlassCard>
+              ))}
+            </div>
+          )}
         </main>
       </div>
     </div>

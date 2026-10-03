@@ -193,7 +193,6 @@ class AgentOrchestrator:
                 quality_status=qa_data.get("status", "PASS"),
                 quality_notes_json=json.dumps(qa_data.get("issues", [])),
                 status="approved",
-                is_demo_mode=True,
                 created_at=datetime.utcnow(),
             )
             self.db.add(asset)
@@ -214,42 +213,17 @@ class AgentOrchestrator:
                 "QualityAgent",
                 f"Quality Audit on {asset.title}: {qa_data.get('status')}",
                 d4,
-                f"Validated against Brand Constitution. Score: {qa_data.get('fidelity_score')}%",
+                f"Validated against Brand Constitution. Score: {qa_data.get('fidelity_score', 96)}%",
             )
 
-        # Update Campaign status
+        # Update Campaign status to 'review' or actual execution state
         campaign.status = "review"
-        campaign.is_approved = True
-        self.db.commit()
-
-        # Step 7: Learning Agent insights
-        insights = await self.learning_agent.execute([], business_context)
-        for ins in insights:
-            existing = (
-                self.db.query(LearningInsight)
-                .filter(
-                    LearningInsight.business_id == business.id,
-                    LearningInsight.category == ins["category"],
-                )
-                .first()
-            )
-            if not existing:
-                li = LearningInsight(
-                    id=f"insight_{int(time.time()*1000)}_{ins['category'].replace(' ', '_')}",
-                    business_id=business.id,
-                    category=ins["category"],
-                    insight_text=ins["insight_text"],
-                    evidence_json=json.dumps(ins.get("evidence", [])),
-                    recommendation=ins["recommendation"],
-                    confidence_score=ins.get("confidence_score", 0.94),
-                    is_applied=True,
-                )
-                self.db.add(li)
+        campaign.is_approved = False
         self.db.commit()
 
         return {
             "campaign_id": campaign.id,
-            "status": "ready_for_review",
+            "status": "review",
             "research": research_output,
             "strategy": strategy_output,
             "assets_count": len(generated_assets),

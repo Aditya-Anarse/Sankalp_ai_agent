@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime, timedelta
-import uuid
+from datetime import datetime
 
 from ..database.database import get_db
-from ..models.models import ContentAsset, Campaign, Business, ScheduledPost
+from ..models.models import ContentAsset, Campaign, Business
 from ..api.auth import get_current_user
 
 router = APIRouter(prefix="/calendar", tags=["Content Calendar"])
@@ -24,14 +23,23 @@ def get_calendar_events(
     if not business:
         return []
         
-    posts = db.query(ContentAsset).join(Campaign).filter(Campaign.business_id == business.id).all()
+    # Only return content that is actually scheduled or published with a real timestamp
+    posts = (
+        db.query(ContentAsset)
+        .filter(
+            ContentAsset.business_id == business.id,
+            (ContentAsset.scheduled_at != None) | (ContentAsset.published_at != None)
+        )
+        .order_by(ContentAsset.scheduled_at.asc())
+        .all()
+    )
     
     events = []
-    base_time = datetime.utcnow()
-    
-    for idx, p in enumerate(posts):
-        # Assign schedule if missing for calendar view
-        sched_time = p.scheduled_at or (base_time + timedelta(days=idx+1, hours=18, minutes=30))
+    for p in posts:
+        event_time = p.scheduled_at or p.published_at
+        if not event_time:
+            continue
+            
         events.append({
             "id": p.id,
             "campaign_id": p.campaign_id,
@@ -42,9 +50,9 @@ def get_calendar_events(
             "status": p.status,
             "quality_status": p.quality_status,
             "media_url": p.media_url,
-            "scheduled_at": sched_time.isoformat(),
-            "date": sched_time.strftime("%Y-%m-%d"),
-            "time": sched_time.strftime("%H:%M")
+            "scheduled_at": event_time.isoformat(),
+            "date": event_time.strftime("%Y-%m-%d"),
+            "time": event_time.strftime("%H:%M")
         })
         
     return events

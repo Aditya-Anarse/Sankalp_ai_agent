@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { api } from "@/lib/api";
 
 export interface User {
   id: string;
@@ -25,6 +26,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const AUTH_STORAGE_KEY = "sankalp_auth_user";
+const AUTH_TOKEN_KEY = "sankalp_token";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -43,76 +45,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const saveUser = (userData: User | null) => {
+  const saveUser = (userData: User | null, token?: string) => {
     setUser(userData);
     if (userData) {
       try {
         localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(userData));
+        if (token) {
+          localStorage.setItem(AUTH_TOKEN_KEY, token);
+        }
       } catch (e) {
         console.warn("Failed to persist auth session", e);
       }
     } else {
       localStorage.removeItem(AUTH_STORAGE_KEY);
+      localStorage.removeItem(AUTH_TOKEN_KEY);
     }
   };
 
-  const login = async (email: string): Promise<boolean> => {
-    // Simulated authentication for Phase 2 demo
-    const namePart = email.split("@")[0] || "Founder";
-    const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-    
-    // Check if there is already a stored business name in onboarding
-    let existingBusinessName = "";
+  const login = async (email: string, password: string = "password123"): Promise<boolean> => {
     try {
-      const onboardingData = localStorage.getItem("sankalp_onboarding_data");
-      if (onboardingData) {
-        const parsed = JSON.parse(onboardingData);
-        existingBusinessName = parsed?.businessProfile?.businessName || "";
+      const res = await api.auth.login({ email, password });
+      if (res && res.user) {
+        const u: User = {
+          id: res.user.id,
+          name: res.user.name,
+          email: res.user.email,
+          businessName: res.user.business_name || "",
+          createdAt: res.user.created_at || new Date().toISOString(),
+        };
+        saveUser(u, res.access_token);
+        return true;
       }
-    } catch {}
-
-    const mockUser: User = {
-      id: "usr_" + Math.random().toString(36).substring(2, 9),
-      name: user?.name || formattedName,
-      email: email,
-      businessName: user?.businessName || existingBusinessName || "My Business",
-      createdAt: user?.createdAt || new Date().toISOString(),
-    };
-
-    saveUser(mockUser);
-    return true;
+      return false;
+    } catch (err) {
+      console.error("Login failed:", err);
+      throw err;
+    }
   };
 
   const signup = async (
     name: string,
     email: string,
-    password?: string,
+    password: string = "password123",
     businessName?: string
   ): Promise<boolean> => {
-    const mockUser: User = {
-      id: "usr_" + Math.random().toString(36).substring(2, 9),
-      name: name.trim(),
-      email: email.trim(),
-      businessName: businessName?.trim() || "My Business",
-      createdAt: new Date().toISOString(),
-    };
-
-    saveUser(mockUser);
-    return true;
+    try {
+      const res = await api.auth.signup({
+        name: name.trim(),
+        email: email.trim(),
+        password,
+        business_name: businessName?.trim() || "",
+      });
+      if (res && res.user) {
+        const u: User = {
+          id: res.user.id,
+          name: res.user.name,
+          email: res.user.email,
+          businessName: res.user.business_name || businessName || "",
+          createdAt: res.user.created_at || new Date().toISOString(),
+        };
+        saveUser(u, res.access_token);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error("Signup failed:", err);
+      throw err;
+    }
   };
 
   const loginWithGoogle = async (): Promise<boolean> => {
-    const mockUser: User = {
-      id: "usr_google_" + Math.random().toString(36).substring(2, 9),
-      name: "Demo Founder",
-      email: "founder@sankalpdrive.ai",
-      businessName: "Aura Studio",
-      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80",
-      createdAt: new Date().toISOString(),
-    };
-
-    saveUser(mockUser);
-    return true;
+    // Honest redirection or indication if Google OAuth is not configured
+    alert("Google OAuth is not configured. Please use Email / Password signup.");
+    return false;
   };
 
   const logout = () => {

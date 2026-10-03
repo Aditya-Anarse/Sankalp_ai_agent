@@ -5,20 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database.database import get_db
-from ..models.models import ContentAsset, Business, Campaign
+from ..models.models import ContentAsset, Business, Campaign, SocialAccount
 from ..schemas.schemas import ContentAssetCreate, ContentAssetUpdate, ContentAssetResponse
-from ..agents.specialized import QualityAgent, CreativeAgent
+from ..agents.specialized import QualityAgent, CreativeAgent, PublisherAgent
 
 router = APIRouter(prefix="/content", tags=["Content Studio"])
-
-
-def get_default_business(db: Session) -> Business:
-    biz = db.query(Business).first()
-    if not biz:
-        biz = Business(id="biz_demo", owner_id="usr_demo", name="ABC Fashion Store")
-        db.add(biz)
-        db.commit()
-    return biz
 
 
 @router.get("")
@@ -27,7 +18,10 @@ def list_content_assets(
     status: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    biz = get_default_business(db)
+    biz = db.query(Business).first()
+    if not biz:
+        return []
+
     query = db.query(ContentAsset).filter(ContentAsset.business_id == biz.id)
     if platform:
         query = query.filter(ContentAsset.platform.ilike(f"%{platform}%"))
@@ -54,7 +48,6 @@ def list_content_assets(
             "status": a.status,
             "scheduled_at": a.scheduled_at,
             "published_at": a.published_at,
-            "is_demo_mode": a.is_demo_mode,
             "created_at": a.created_at,
         }
         for a in assets
@@ -84,7 +77,6 @@ def get_content_asset(id: str, db: Session = Depends(get_db)):
         "status": a.status,
         "scheduled_at": a.scheduled_at,
         "published_at": a.published_at,
-        "is_demo_mode": a.is_demo_mode,
         "created_at": a.created_at,
     }
 
@@ -150,7 +142,10 @@ async def regenerate_content_asset(id: str, db: Session = Depends(get_db)):
     if not a:
         raise HTTPException(status_code=404, detail="Content asset not found")
 
-    biz = db.query(Business).filter(Business.id == a.business_id).first() or get_default_business(db)
+    biz = db.query(Business).filter(Business.id == a.business_id).first()
+    if not biz:
+        raise HTTPException(status_code=404, detail="No business configured yet. Complete business setup first.")
+
     creative = CreativeAgent()
     biz_context = {
         "name": biz.name,
@@ -194,7 +189,7 @@ def schedule_content(id: str, payload: dict, db: Session = Depends(get_db)):
 
 
 @router.post("/{id}/publish")
-def publish_content(id: str, db: Session = Depends(get_db)):
+async def publish_content(id: str, db: Session = Depends(get_db)):
     a = db.query(ContentAsset).filter(ContentAsset.id == id).first()
     if not a:
         raise HTTPException(status_code=404, detail="Content asset not found")
@@ -205,17 +200,58 @@ def publish_content(id: str, db: Session = Depends(get_db)):
             detail="Cannot publish content that has not passed Quality Agent audit."
         )
 
-    a.status = "published"
-    a.published_at = datetime.utcnow()
-    db.commit()
-    
-    return {
-        "status": "published",
-        "id": a.id,
-        "platform": a.platform,
-        "is_demo_mode": a.is_demo_mode,
-        "note": "Demo Publish Successful — Simulated dispatch completed without contacting external platforms.",
+    # Check for verified connected social account
+    platform_name = (a.platform or "instagram").lower()
+    social_acc = (
+        db.query(SocialAccount)
+        .filter(
+            SocialAccount.business_id == a.business_id,
+            SocialAccount.platform == platform_name,
+            SocialAccount.is_connected == True
+        )
+        .first()
+    )
+
+    if not social_acc or not social_acc.access_token:
+        a.status = "failed"
+        db.commit()
+        raise HTTPException(
+            status_code=400,
+            detail=f"{a.platform.capitalize()} is not connected. Connect an authenticated account with publish permissions first."
+        )
+
+    # Actual real API publish call via PublisherAgent
+    publisher = PublisherAgent()
+    platform_conn = {
+        "access_token": social_acc.access_token,
+        "account_id": social_acc.account_id,
     }
+    content_item = {
+        "platform": a.platform,
+        "caption": a.caption or a.title or "",
+        "media_url": a.media_url or "",
+    }
+
+    pub_res = await publisher.execute(content_item, platform_conn)
+
+    if pub_res.get("status") == "PUBLISHED":
+        a.status = "published"
+        a.published_at = datetime.utcnow()
+        db.commit()
+        return {
+            "status": "published",
+            "id": a.id,
+            "platform": a.platform,
+            "media_id": pub_res.get("media_id"),
+            "post_url": pub_res.get("post_url"),
+        }
+    else:
+        a.status = "failed"
+        db.commit()
+        raise HTTPException(
+            status_code=502,
+            detail=pub_res.get("error", f"Publishing to {a.platform} failed on external platform.")
+        )
 
 
 @router.delete("/{id}")

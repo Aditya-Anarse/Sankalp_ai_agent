@@ -1,7 +1,9 @@
 import logging
 import asyncio
 from typing import Dict, Any, List, Optional
+import httpx
 from ..ai.providers import get_ai_provider
+from ..core.config import settings
 
 logger = logging.getLogger("sankalp.agents")
 
@@ -31,8 +33,8 @@ class ResearchAgent:
     def run(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         objective = input_data.get("objective", "Promote products")
         business_context = input_data.get("business", {
-            "name": input_data.get("brand", "ABC Fashion Store"),
-            "products": [{"name": "Urban Glide Sneaker", "price": "₹4,999"}]
+            "name": input_data.get("brand", "Your Business"),
+            "products": []
         })
         return _run_sync(self.execute(business_context, objective))
 
@@ -49,19 +51,14 @@ class StrategyAgent:
         return await self.ai.generate_strategy(business_context, research, duration_days)
 
     def run(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        objective = input_data.get("objective", "Summer drop")
+        objective = input_data.get("objective", "Promote products")
         research = input_data.get("research", {})
         duration_days = input_data.get("duration_days", 5)
         business_context = input_data.get("business", {
-            "name": "ABC Fashion Store",
-            "products": [{"name": "Urban Glide Sneaker", "price": "₹4,999"}]
+            "name": input_data.get("brand", "Your Business"),
+            "products": []
         })
         res = _run_sync(self.execute(business_context, research, duration_days))
-        # Ensure 5 content pillars for contract compatibility
-        if len(res.get("content_pillars", [])) < 5:
-            res["content_pillars"] = [
-                "Product Education", "Brand Authority", "Social Proof & Craft", "Lifestyle Integration", "Conversion"
-            ]
         res["duration_days"] = duration_days
         return res
 
@@ -80,13 +77,13 @@ class CreativeAgent:
     def run(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         strategy = input_data.get("strategy", {})
         schedule = strategy.get("schedule", [
-            {"day": 1, "title": "Day 1 Teaser", "format": "Reel"},
-            {"day": 2, "title": "Day 2 Tech Breakdown", "format": "Carousel"},
-            {"day": 3, "title": "Day 3 Launch Drop", "format": "Post"}
+            {"day": 1, "title": "Day 1 Hook", "format": "Reel"},
+            {"day": 2, "title": "Day 2 Feature", "format": "Carousel"},
+            {"day": 3, "title": "Day 3 Launch", "format": "Post"}
         ])
         business_context = input_data.get("business", {
-            "name": "ABC Fashion Store",
-            "products": [{"name": "Urban Glide Sneaker", "price": "₹4,999"}]
+            "name": input_data.get("brand", "Your Business"),
+            "products": []
         })
         assets = []
         for item in schedule:
@@ -108,20 +105,20 @@ class QualityAgent:
     ) -> Dict[str, Any]:
         logger.info(f"QualityAgent running QA checks on {content_item.get('title')}")
         res = await self.ai.evaluate_quality(content_item, brand_rules)
-        res["overall_score"] = res.get("fidelity_score", 99.4) / 100.0
+        res["overall_score"] = res.get("fidelity_score", 96.0) / 100.0
         return res
 
     def run(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         content_assets = input_data.get("content_assets", [{}])
         first_asset = content_assets[0] if content_assets else {}
-        brand_rules = input_data.get("brand_rules", {"tones": ["Friendly", "Bold"]})
+        brand_rules = input_data.get("brand_rules", {"tones": ["Professional", "Bold"]})
         res = _run_sync(self.execute(first_asset, brand_rules))
-        res["overall_score"] = res.get("fidelity_score", 99.4) / 100.0
+        res["overall_score"] = res.get("fidelity_score", 96.0) / 100.0
         return res
 
 
 class PublisherAgent:
-    """Agent 5: Coordinates native or simulated dispatch across Instagram and YouTube."""
+    """Agent 5: Coordinates native API dispatch to Instagram and YouTube."""
     def __init__(self, ai_provider=None):
         self.ai = ai_provider
 
@@ -129,30 +126,33 @@ class PublisherAgent:
         self, content_item: Dict[str, Any], platform_connection: Dict[str, Any]
     ) -> Dict[str, Any]:
         platform = content_item.get("platform", "Instagram").lower()
-        is_demo = platform_connection.get("is_demo_mode", True)
         access_token = platform_connection.get("access_token")
-        
-        # 1. Demo Mode Simulation
-        if is_demo or not access_token or access_token.startswith("demo_"):
-            return {
-                "status": "PUBLISHED_SIMULATION",
-                "platform": platform.capitalize(),
-                "is_demo": True,
-                "demo_mode": True,
-                "note": "Demo Mode: Dispatch simulation completed without touching external social platform.",
-                "post_url": f"https://instagram.com/p/demo_{content_item.get('id', '123')}",
-            }
-        
-        # 2. Real Mode Dispatch
         account_id = platform_connection.get("account_id")
+
+        if not access_token or not account_id:
+            return {
+                "status": "FAILED",
+                "platform": platform.capitalize(),
+                "error": f"No active verified OAuth token for {platform.capitalize()}. Real publishing requires a connected account.",
+                "note": "Connect account via OAuth before attempting real publishing."
+            }
+
         caption = content_item.get("caption", "")
         media_url = content_item.get("media_url", "")
 
         if platform == "instagram":
+            if not media_url or not (media_url.startswith("http://") or media_url.startswith("https://")):
+                return {
+                    "status": "FAILED",
+                    "platform": "Instagram",
+                    "error": "A public HTTP/HTTPS media URL is required by Instagram Graph API to create a media container."
+                }
+
             try:
-                async with httpx.AsyncClient(timeout=20.0) as client:
-                    # Step A: Create media container
-                    create_url = f"https://graph.facebook.com/v19.0/{account_id}/media"
+                api_v = settings.INSTAGRAM_API_VERSION
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    # Step 1: POST /media -> receive creation ID
+                    create_url = f"https://graph.instagram.com/{api_v}/{account_id}/media"
                     params = {
                         "access_token": access_token,
                         "caption": caption,
@@ -160,88 +160,98 @@ class PublisherAgent:
                     }
                     c_resp = await client.post(create_url, params=params)
                     if c_resp.status_code != 200:
+                        alt_url = f"https://graph.facebook.com/{api_v}/{account_id}/media"
+                        c_resp = await client.post(alt_url, params=params)
+
+                    if c_resp.status_code != 200:
                         err_msg = c_resp.json().get("error", {}).get("message", c_resp.text)
                         return {
-                            "status": "FAILED_API_ERROR",
+                            "status": "FAILED",
                             "platform": "Instagram",
-                            "is_demo": False,
-                            "error": f"Meta Graph API container error: {err_msg}",
-                            "note": "Real API call attempted but rejected by Meta."
+                            "error": f"Instagram Graph API container error: {err_msg}"
                         }
                     container_id = c_resp.json().get("id")
 
-                    # Step B: Publish media container
-                    pub_url = f"https://graph.facebook.com/v19.0/{account_id}/media_publish"
+                    # Step 2: Check processing status if required
+                    status_url = f"https://graph.instagram.com/{api_v}/{container_id}"
+                    status_resp = await client.get(status_url, params={"fields": "status_code", "access_token": access_token})
+                    if status_resp.status_code != 200:
+                        alt_status_url = f"https://graph.facebook.com/{api_v}/{container_id}"
+                        await client.get(alt_status_url, params={"fields": "status_code", "access_token": access_token})
+
+                    # Step 3: POST /media_publish -> receive published media ID
+                    pub_url = f"https://graph.instagram.com/{api_v}/{account_id}/media_publish"
                     p_resp = await client.post(pub_url, params={"creation_id": container_id, "access_token": access_token})
+                    if p_resp.status_code != 200:
+                        alt_pub_url = f"https://graph.facebook.com/{api_v}/{account_id}/media_publish"
+                        p_resp = await client.post(alt_pub_url, params={"creation_id": container_id, "access_token": access_token})
+
                     if p_resp.status_code == 200:
                         media_id = p_resp.json().get("id")
                         return {
                             "status": "PUBLISHED",
                             "platform": "Instagram",
-                            "is_demo": False,
                             "media_id": media_id,
                             "post_url": f"https://www.instagram.com/p/{media_id}/",
-                            "note": "Successfully published to live Instagram via official Meta Graph API."
+                            "note": "Successfully published to Instagram via official Meta Graph API."
                         }
                     else:
                         err_msg = p_resp.json().get("error", {}).get("message", p_resp.text)
                         return {
-                            "status": "FAILED_API_ERROR",
+                            "status": "FAILED",
                             "platform": "Instagram",
-                            "is_demo": False,
-                            "error": f"Meta Graph API publish error: {err_msg}"
+                            "error": f"Instagram Graph API publish error: {err_msg}"
                         }
             except Exception as e:
                 return {
-                    "status": "FAILED_CONNECTION_ERROR",
+                    "status": "FAILED",
                     "platform": "Instagram",
-                    "is_demo": False,
-                    "error": f"Network error connecting to Meta: {str(e)}"
+                    "error": f"Network error connecting to Instagram: {str(e)}"
                 }
 
         elif platform == "youtube":
             return {
-                "status": "INTEGRATION_READY",
+                "status": "FAILED",
                 "platform": "YouTube",
-                "is_demo": False,
-                "note": "YouTube OAuth channel authenticated. Video file upload stream ready for dispatch."
+                "error": "Direct video file streaming endpoint required for YouTube video upload."
             }
 
         return {
-            "status": "FAILED_UNSUPPORTED_PLATFORM",
+            "status": "FAILED",
             "platform": platform,
-            "is_demo": False,
-            "error": f"Platform '{platform}' is not supported for real dispatch."
+            "error": f"Platform '{platform}' is not supported for publishing."
         }
 
     def run(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         content_item = {
             "id": input_data.get("content_asset_id", "test-1"),
-            "platform": input_data.get("platform", "instagram")
+            "platform": input_data.get("platform", "instagram"),
+            "caption": input_data.get("caption", ""),
+            "media_url": input_data.get("media_url", "")
         }
-        return _run_sync(self.execute(content_item, {"is_demo_mode": True}))
+        platform_conn = input_data.get("platform_connection", {})
+        return _run_sync(self.execute(content_item, platform_conn))
 
 
 class PerformanceAgent:
-    """Agent 6: Gathers available metrics, engagement rates, and drop-off tensors."""
+    """Agent 6: Analyzes real metrics, engagement rates, and impressions."""
     def __init__(self, ai_provider=None):
         self.ai = ai_provider
 
-    async def execute(self, content_id: str, is_demo: bool = True) -> Dict[str, Any]:
+    async def execute(self, content_id: str) -> Dict[str, Any]:
         return {
             "content_id": content_id,
-            "views": 18420 if is_demo else 0,
-            "reach": 24500 if is_demo else 0,
-            "likes": 1280 if is_demo else 0,
-            "comments": 94 if is_demo else 0,
-            "shares": 312 if is_demo else 0,
-            "saves": 450 if is_demo else 0,
-            "engagement_rate": 8.7 if is_demo else 0.0,
-            "is_demo_data": is_demo,
+            "views": 0,
+            "reach": 0,
+            "likes": 0,
+            "comments": 0,
+            "shares": 0,
+            "saves": 0,
+            "engagement_rate": 0.0,
             "metrics": {
-                "total_reach": 24500 if is_demo else 0,
-                "total_views": 18420 if is_demo else 0,
-                "engagement_rate": 8.7 if is_demo else 0.0,
+                "total_reach": 0,
+                "total_views": 0,
+                "engagement_rate": 0.0,
             }
         }
 
@@ -250,12 +260,12 @@ class PerformanceAgent:
         return {
             "days": days,
             "metrics": {
-                "total_reach": 48200,
-                "total_impressions": 64500,
-                "total_engagement": 5830,
-                "engagement_rate": 9.04,
-                "follower_growth": 340,
-                "total_posts": 5
+                "total_reach": 0,
+                "total_impressions": 0,
+                "total_engagement": 0,
+                "engagement_rate": 0.0,
+                "follower_growth": 0,
+                "total_posts": 0
             }
         }
 
@@ -268,11 +278,16 @@ class LearningAgent:
     async def execute(
         self, campaign_data: List[Dict[str, Any]], business_context: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
+        if not campaign_data:
+            return []
         logger.info("LearningAgent extracting cross-campaign performance signals")
         return await self.ai.generate_learning_insights(campaign_data, business_context)
 
     def run(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        insights = _run_sync(self.execute([], input_data.get("business", {})))
+        campaign_data = input_data.get("campaign_data", [])
+        if not campaign_data:
+            return {"insights": [], "count": 0}
+        insights = _run_sync(self.execute(campaign_data, input_data.get("business", {})))
         return {
             "insights": insights,
             "count": len(insights)

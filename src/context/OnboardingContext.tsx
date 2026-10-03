@@ -123,67 +123,6 @@ const DEFAULT_ONBOARDING_STATE: OnboardingState = {
   isCompleted: false,
 };
 
-const SAMPLE_DEMO_BUSINESS: OnboardingState = {
-  businessProfile: {
-    businessName: "Aura Botanicals",
-    businessType: "D2C Brand",
-    location: "Bengaluru",
-    description: "Eco-luxury organic skincare made with cold-pressed Himalayan botanicals and zero synthetic chemicals.",
-    website: "https://aurabotanicals.co",
-  },
-  products: [
-    {
-      id: "prod_1",
-      name: "Himalayan Rose Glow Serum",
-      category: "Skincare",
-      price: "₹1,899",
-      description: "Infused with cold-pressed wild rosehip and 24k gold flakes for instant 24h glass skin glow.",
-    },
-    {
-      id: "prod_2",
-      name: "Kashmir Saffron Night Elixir",
-      category: "Skincare",
-      price: "₹2,450",
-      description: "Deep cell rejuvenation oil with pure Kashmiri saffron and sea buckthorn oil.",
-    },
-  ],
-  audience: {
-    ageRange: ["25–34", "35–44"],
-    locations: ["City", "India", "Global"],
-    types: ["Professionals", "Shoppers", "Creators"],
-    description: "Conscious millennial consumers seeking clean luxury skincare routines backed by clean ingredients.",
-  },
-  brand: {
-    tone: ["Luxury", "Minimal", "Trustworthy"],
-    colors: ["#10B981", "#00F0FF", "#080A10"],
-    tagline: "Purity distilled from the Himalayas.",
-    language: ["English", "Hindi"],
-  },
-  goals: {
-    primary: "Promote Products",
-    secondary: ["Grow Reach", "Build Audience", "Increase Engagement"],
-  },
-  contentPreferences: {
-    frequency: "Daily",
-    formats: ["Reel", "Carousel", "Story"],
-    postingTime: "Evening",
-    styles: ["Behind the Scenes", "Product Showcase", "Educational"],
-  },
-  connectedAccounts: {
-    instagram: {
-      connected: true,
-      handle: "@aurabotanicals.co",
-      connectedAt: "Just now",
-    },
-    youtube: {
-      connected: true,
-      channelName: "Aura Botanicals Studio",
-      connectedAt: "Just now",
-    },
-  },
-  currentStep: 7,
-  isCompleted: true,
-};
 
 const STORAGE_KEY = "sankalp_onboarding_data";
 
@@ -203,7 +142,6 @@ interface OnboardingContextType {
   setCurrentStep: (step: number) => void;
   completeOnboarding: () => void;
   resetOnboarding: () => void;
-  loadDemoData: () => void;
 }
 
 const OnboardingContext = createContext<OnboardingContextType | undefined>(undefined);
@@ -353,10 +291,6 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     saveState(DEFAULT_ONBOARDING_STATE);
   };
 
-  const loadDemoData = () => {
-    saveState(SAMPLE_DEMO_BUSINESS);
-  };
-
   return (
     <OnboardingContext.Provider
       value={{
@@ -375,7 +309,6 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         setCurrentStep,
         completeOnboarding,
         resetOnboarding,
-        loadDemoData,
       }}
     >
       {children}

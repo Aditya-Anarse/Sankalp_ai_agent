@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
-import uuid
 
 from ..database.database import get_db
 from ..models.models import Notification, Business
@@ -27,32 +26,7 @@ def get_notifications(
         ).order_by(Notification.created_at.desc()).limit(20).all()
     
     if not notifs:
-        return [
-            {
-                "id": "notif-1",
-                "title": "Campaign Ready for Approval",
-                "message": "Strategy and creative generation complete for 'Summer Pulse 2026'. 5 assets ready for review.",
-                "type": "campaign_ready",
-                "is_read": False,
-                "created_at": datetime.utcnow().isoformat()
-            },
-            {
-                "id": "notif-2",
-                "title": "Quality Check Passed",
-                "message": "All 5 content assets successfully passed brand tone, character limit, and pricing verification.",
-                "type": "quality_check",
-                "is_read": False,
-                "created_at": datetime.utcnow().isoformat()
-            },
-            {
-                "id": "notif-3",
-                "title": "Learning Insight Generated",
-                "message": "SANKALP discovered that product showcase reels achieve 2.4x higher view retention.",
-                "type": "learning_insight",
-                "is_read": True,
-                "created_at": datetime.utcnow().isoformat()
-            }
-        ]
+        return []
         
     return [
         {

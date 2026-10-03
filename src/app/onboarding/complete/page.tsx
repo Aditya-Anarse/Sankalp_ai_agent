@@ -112,7 +112,7 @@ export default function OnboardingCompletePage() {
                       <ShoppingBag className="w-3.5 h-3.5 text-cyan-400" /> Business
                     </span>
                     <p className="text-sm font-bold text-white truncate">
-                      {business.businessName || "ABC Fashion Store"}
+                      {business.businessName || "Your Business"}
                     </p>
                     <span className="text-[10px] text-slate-400">
                       {business.businessType} • {business.location}

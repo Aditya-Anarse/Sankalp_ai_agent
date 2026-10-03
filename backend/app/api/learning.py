@@ -6,10 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database.database import get_db
-from ..models.models import LearningInsight, Business, Campaign, ContentAsset
+from ..models.models import LearningInsight, Business, Campaign, ContentAsset, AnalyticsSnapshot
 from ..api.auth import get_current_user
 from ..agents.specialized import LearningAgent
-from ..ai.providers import get_ai_provider
 
 router = APIRouter(prefix="/learning", tags=["Learning Center"])
 
@@ -32,69 +31,23 @@ def get_learning_insights(
         
     insights = query.order_by(LearningInsight.created_at.desc()).all()
     
-    # If empty, return initial calibrated baseline insights for the business
-    if not insights:
-        demo_insights = [
-            {
-                "id": "demo-learn-1",
-                "insight": "Product showcase reels generated higher engagement than static product posts in the available campaign data.",
-                "evidence": [
-                    "Reels averaged 14.2% engagement across 3 test runs",
-                    "Static posts averaged 5.8% engagement on Instagram",
-                    "Video retention was strongest at 0-7 seconds with prompt hook"
-                ],
-                "recommendation": "Consider testing more product showcase reels with immediate value hooks in the first 3 seconds.",
-                "confidence_score": 0.88,
-                "category": "content_format",
-                "is_active": True,
-                "created_at": datetime.utcnow().isoformat()
-            },
-            {
-                "id": "demo-learn-2",
-                "insight": "Educational 'Behind-The-Scenes' carousel posts drive higher saves and profile visits from young professionals.",
-                "evidence": [
-                    "Carousels drove 4.1x more saves than single image posts",
-                    "73% of saves converted to link-in-bio clicks within 24 hours"
-                ],
-                "recommendation": "Allocate at least 2 slots per week to multi-slide educational carousels.",
-                "confidence_score": 0.82,
-                "category": "audience_behavior",
-                "is_active": True,
-                "created_at": datetime.utcnow().isoformat()
-            },
-            {
-                "id": "demo-learn-3",
-                "insight": "Evening publishing between 18:00 and 20:30 IST coincided with peak initial view velocity for consumer products.",
-                "evidence": [
-                    "Posts published at 19:00 reached 60% of their 24h impressions in the first 2 hours",
-                    "Morning posts at 09:00 required 8 hours to reach equivalent traction"
-                ],
-                "recommendation": "Schedule high-priority announcement and promotional reels between 18:30 and 20:00.",
-                "confidence_score": 0.79,
-                "category": "timing",
-                "is_active": True,
-                "created_at": datetime.utcnow().isoformat()
-            }
-        ]
-        return demo_insights
-        
     return [
         {
             "id": i.id,
             "campaign_id": i.campaign_id,
             "category": i.category,
-            "insight": i.insight,
+            "insight": i.insight_text,
             "evidence": i.evidence or [],
             "recommendation": i.recommendation,
             "confidence_score": i.confidence_score,
-            "is_active": i.is_active,
+            "is_active": i.is_applied,
             "created_at": i.created_at.isoformat() if i.created_at else None
         } for i in insights
     ]
 
 
 @router.post("/analyze")
-def trigger_learning_analysis(
+async def trigger_learning_analysis(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -102,31 +55,62 @@ def trigger_learning_analysis(
     if not business:
         business = db.query(Business).first()
     if not business:
-        raise HTTPException(status_code=404, detail="Business not found")
+        raise HTTPException(status_code=404, detail="No business configured yet. Complete business setup first.")
         
-    campaigns = db.query(Campaign).filter(Campaign.business_id == business.id).all()
-    
+    # Gather actual published posts and telemetry snapshots
+    snapshots = db.query(AnalyticsSnapshot).filter(AnalyticsSnapshot.business_id == business.id).all()
+    published_assets = db.query(ContentAsset).filter(
+        ContentAsset.business_id == business.id,
+        ContentAsset.status == "published"
+    ).all()
+
+    if not snapshots and not published_assets:
+        return {
+            "status": "insufficient_data",
+            "message": "Not enough performance data to generate learning insights.",
+            "insights_generated": 0
+        }
+
+    campaign_data = []
+    for asset in published_assets:
+        # Match snapshot if available
+        snap = next((s for s in snapshots if s.content_id == asset.id), None)
+        campaign_data.append({
+            "content_id": asset.id,
+            "title": asset.title,
+            "platform": asset.platform,
+            "content_type": asset.content_type,
+            "reach": snap.reach if snap else 0,
+            "impressions": (snap.impressions or snap.views) if snap else 0,
+            "engagement_rate": snap.engagement_rate if snap else 0.0,
+            "likes": snap.likes if snap else 0,
+        })
+
+    if not campaign_data:
+        return {
+            "status": "insufficient_data",
+            "message": "Not enough performance data to generate learning insights.",
+            "insights_generated": 0
+        }
+
     agent = LearningAgent()
-    results = agent.run({
-        "business": {
-            "name": business.name,
-            "industry": business.business_type
-        },
-        "campaigns_count": len(campaigns),
-        "analytics_available": True
-    })
+    business_context = {
+        "name": business.name,
+        "industry": business.business_type
+    }
     
-    # Save newly formed insights into the database
+    insights = await agent.execute(campaign_data, business_context)
+
     saved_insights = []
-    for item in results.get("insights", []):
+    for item in insights:
         db_insight = LearningInsight(
             id=f"insight_{uuid.uuid4().hex[:12]}",
             business_id=business.id,
-            category=item.get("category", "General Performance"),
+            category=item.get("category", "Content Performance"),
             insight_text=item.get("insight_text") or item.get("insight", "Performance pattern observed"),
             evidence_json=json.dumps(item.get("evidence", [])),
-            recommendation=item.get("recommendation", "Continue optimizing posting schedule."),
-            confidence_score=item.get("confidence_score", 0.92),
+            recommendation=item.get("recommendation", "Optimize format mix based on performance data."),
+            confidence_score=item.get("confidence_score", 0.90),
             is_applied=True,
             created_at=datetime.utcnow()
         )
@@ -137,6 +121,6 @@ def trigger_learning_analysis(
     
     return {
         "status": "success",
-        "message": f"Synthesized {len(saved_insights)} autonomous learning insights from historical performance.",
+        "message": f"Synthesized {len(saved_insights)} real learning insights from performance data.",
         "insights_generated": len(saved_insights)
     }

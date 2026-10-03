@@ -13,11 +13,9 @@ import { BusinessSection } from "@/components/landing/BusinessSection";
 import { CTASection } from "@/components/landing/CTASection";
 import { Footer } from "@/components/layout/Footer";
 import { InteractiveBackground } from "@/components/ui/InteractiveBackground";
-import { DemoModal } from "@/components/ui/DemoModal";
 import { AuthModal } from "@/components/ui/AuthModal";
 
 export default function Home() {
-  const [demoOpen, setDemoOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
 
@@ -36,7 +34,6 @@ export default function Home() {
 
       {/* 1. Hero Section with 3D AI Core */}
       <HeroSection
-        onOpenDemo={() => setDemoOpen(true)}
         onOpenAuth={() => handleOpenAuth("signup")}
       />
 
@@ -68,7 +65,6 @@ export default function Home() {
       <Footer />
 
       {/* Interactive Modals */}
-      <DemoModal isOpen={demoOpen} onClose={() => setDemoOpen(false)} />
       <AuthModal
         isOpen={authOpen}
         onClose={() => setAuthOpen(false)}

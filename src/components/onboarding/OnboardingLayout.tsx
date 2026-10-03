@@ -36,7 +36,7 @@ export function OnboardingLayout({
   loading = false,
 }: OnboardingLayoutProps) {
   const router = useRouter();
-  const { state, loadDemoData } = useOnboarding();
+  const { state } = useOnboarding();
 
   const handleDefaultBack = () => {
     if (onBack) {
@@ -77,18 +77,7 @@ export function OnboardingLayout({
             </span>
           </Link>
 
-          {/* Quick Demo Pre-fill helper */}
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                loadDemoData();
-              }}
-              className="text-xs font-mono px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-300 border border-white/[0.1] transition-all flex items-center gap-1.5"
-              title="Pre-fill realistic business data for instant testing"
-            >
-              <Wand2 className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="hidden sm:inline">Fill Sample Preset</span>
-            </button>
             <Link
               href="/"
               className="text-xs font-mono text-slate-400 hover:text-white transition-colors"
