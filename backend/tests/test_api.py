@@ -249,3 +249,81 @@ def test_10_learning_requires_real_data():
     assert analyze_resp.status_code == 200
     assert analyze_resp.json()["status"] == "insufficient_data"
     assert "Not enough performance data" in analyze_resp.json()["message"]
+
+
+def test_11_agent_chat_payload_contract():
+    """11. AI Manager /agent/chat accepts 'message', 'prompt', or 'instruction', and rejects empty payloads."""
+    unique_email = f"chat_{int(time.time()*1000)}@test.com"
+    signup_resp = client.post(
+        "/auth/signup",
+        json={"name": "Chat User", "email": unique_email, "password": "Password123!", "business_name": "Chat Brand"}
+    )
+    assert signup_resp.status_code == 200
+    token = signup_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Ensure business is marked onboarded for campaign generation
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == unique_email).first()
+        biz = db.query(Business).filter(Business.owner_id == user.id).first()
+        biz.is_onboarded = True
+        db.commit()
+    finally:
+        db.close()
+
+    # 1. Rejection of empty/missing message
+    r_empty_msg = client.post("/agent/chat", json={"message": "   "}, headers=headers)
+    assert r_empty_msg.status_code == 400
+    assert "Message is required" in r_empty_msg.json()["detail"]
+
+    r_empty_prompt = client.post("/agent/chat", json={"prompt": ""}, headers=headers)
+    assert r_empty_prompt.status_code == 400
+    assert "Message is required" in r_empty_prompt.json()["detail"]
+
+    r_empty_obj = client.post("/agent/chat", json={}, headers=headers)
+    assert r_empty_obj.status_code == 400
+    assert "Message is required" in r_empty_obj.json()["detail"]
+
+    # 2. Acceptance of frontend contract with 'prompt'
+    with patch("app.agents.orchestrator.AgentOrchestrator.run_campaign_pipeline") as mock_pipeline:
+        mock_pipeline.return_value = {
+            "campaign_id": "cmp_mock_1",
+            "status": "review",
+            "content": [
+                {
+                    "id": "asset_mock_1",
+                    "title": "Post 1",
+                    "platform": "instagram",
+                    "content_type": "Post",
+                    "caption": "Test caption",
+                    "quality_status": "PASS",
+                    "status": "approved"
+                }
+            ],
+            "quality": {"status": "PASS", "fidelity_score": 98.0}
+        }
+
+        # Send with 'prompt' (previous frontend payload format)
+        res_prompt = client.post(
+            "/agent/chat",
+            json={"prompt": "Launch a 5-day promotional sequence"},
+            headers=headers
+        )
+        assert res_prompt.status_code == 200
+        data_p = res_prompt.json()
+        assert "Launch a 5-day promotional sequence" in data_p["response"]
+        assert data_p["workflow_summary"]["research_complete"] is True
+        assert data_p["workflow_summary"]["strategy_created"] is True
+
+        # Send with 'message' (standard backend payload format)
+        res_msg = client.post(
+            "/agent/chat",
+            json={"message": "Increase weekday dinner traffic"},
+            headers=headers
+        )
+        assert res_msg.status_code == 200
+        data_m = res_msg.json()
+        assert "Increase weekday dinner traffic" in data_m["response"]
+        assert data_m["workflow_summary"]["content_count"] == 1
+

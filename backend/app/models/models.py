@@ -217,8 +217,8 @@ class Campaign(Base):
 
     id = Column(String(64), primary_key=True, index=True)
     business_id = Column(String(64), ForeignKey("businesses.id"), nullable=False)
-    name = Column(String(255), nullable=False)
-    objective = Column(String(255), nullable=False)
+    name = Column(String(500), nullable=False)
+    objective = Column(Text, nullable=False)
     product_id = Column(String(64), ForeignKey("products.id"), nullable=True)
     status = Column(String(50), default="planning")  # planning, creating, review, scheduled, running, completed
     duration_days = Column(Integer, default=5)

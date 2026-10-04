@@ -1,5 +1,6 @@
 import json
 import time
+import uuid
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -88,14 +89,14 @@ class AgentOrchestrator:
         decision_trace: str,
     ):
         run = AgentRun(
-            id=f"run_{int(time.time()*1000)}",
+            id=f"run_{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}",
             business_id=business_id,
             campaign_id=campaign_id,
             agent_name=agent_name,
-            action=action,
+            action=str(action)[:250],
             status="completed",
             duration_ms=duration_ms,
-            decision_trace=decision_trace,
+            decision_trace=str(decision_trace or ""),
             timestamp=datetime.utcnow(),
         )
         self.db.add(run)
@@ -176,21 +177,36 @@ class AgentOrchestrator:
 
             # Store ContentAsset in DB
             asset_id = f"asset_{campaign.id}_{idx+1}"
+            raw_script = content_data.get("script", "")
+            script_str = json.dumps(raw_script) if isinstance(raw_script, (list, dict)) else str(raw_script or "")
+            
+            raw_hook = content_data.get("hook", "")
+            hook_str = (raw_hook if isinstance(raw_hook, str) else json.dumps(raw_hook))[:490]
+            
+            raw_caption = content_data.get("caption", "")
+            caption_str = raw_caption if isinstance(raw_caption, str) else json.dumps(raw_caption)
+            
+            raw_cta = content_data.get("cta", "")
+            cta_str = (raw_cta if isinstance(raw_cta, str) else json.dumps(raw_cta))[:250]
+            
+            raw_hashtags = content_data.get("hashtags", [])
+            hashtags_str = json.dumps(raw_hashtags) if isinstance(raw_hashtags, list) else str(raw_hashtags or "[]")
+
             asset = ContentAsset(
                 id=asset_id,
                 campaign_id=campaign.id,
                 business_id=business.id,
-                platform=content_data.get("platform", "instagram"),
-                content_type=content_data.get("content_type", "Post"),
-                title=content_data.get("title", f"Day {idx+1} Asset"),
-                caption=content_data.get("caption", ""),
-                hook=content_data.get("hook", ""),
-                script=content_data.get("script", ""),
-                media_url=content_data.get("media_url", ""),
-                thumbnail_url=content_data.get("thumbnail_url", ""),
-                hashtags_json=json.dumps(content_data.get("hashtags", [])),
-                cta=content_data.get("cta", ""),
-                quality_status=qa_data.get("status", "PASS"),
+                platform=str(content_data.get("platform", "instagram")),
+                content_type=str(content_data.get("content_type", "Post")),
+                title=str(content_data.get("title", f"Day {idx+1} Asset"))[:250],
+                caption=caption_str,
+                hook=hook_str,
+                script=script_str,
+                media_url=str(content_data.get("media_url", "") or "")[:500],
+                thumbnail_url=str(content_data.get("thumbnail_url", "") or "")[:500],
+                hashtags_json=hashtags_str,
+                cta=cta_str,
+                quality_status=str(qa_data.get("status", "PASS")),
                 quality_notes_json=json.dumps(qa_data.get("issues", [])),
                 status="approved",
                 created_at=datetime.utcnow(),

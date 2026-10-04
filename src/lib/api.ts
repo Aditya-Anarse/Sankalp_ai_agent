@@ -177,11 +177,13 @@ export const api = {
 
   agent: {
     activity: () => request<any[]>('/agent/activity'),
-    chat: (prompt: string) =>
-      request<any>('/agent/chat', {
+    chat: (text: string) => {
+      const trimmed = (text || '').trim();
+      return request<any>('/agent/chat', {
         method: 'POST',
-        body: JSON.stringify({ prompt }),
-      }),
+        body: JSON.stringify({ message: trimmed, prompt: trimmed }),
+      });
+    },
   },
 
   learning: {

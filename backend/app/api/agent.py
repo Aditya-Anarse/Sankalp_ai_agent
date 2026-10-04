@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database.database import get_db
-from ..models.models import AgentRun, AgentEvent, Business, Campaign, Product, AudienceProfile, BrandProfile, ContentAsset
-from ..api.auth import get_current_user
+from ..models.models import AgentRun, AgentEvent, Business, Campaign, Product, AudienceProfile, BrandProfile, ContentAsset, User
+from ..api.auth import get_optional_current_user
 from ..agents.orchestrator import AgentOrchestrator
 from ..ai.providers import get_ai_provider
 
@@ -19,9 +19,11 @@ router = APIRouter(prefix="/agent", tags=["Agent Orchestration & Activity"])
 def get_agent_activity(
     limit: int = 50,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_optional_current_user)
 ):
-    business = db.query(Business).filter(Business.owner_id == current_user.id).first()
+    business = None
+    if current_user:
+        business = db.query(Business).filter(Business.owner_id == current_user.id).first()
     if not business:
         business = db.query(Business).first()
     
@@ -53,18 +55,28 @@ def get_agent_activity(
 def handle_ai_manager_chat(
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     """
     Conversational endpoint for the AI Manager.
     Receives user commands, checks real business setup and AI provider,
     and runs the autonomous agents pipeline on real business data.
     """
-    message = payload.get("message", "").strip()
+    raw_message = (
+        payload.get("message")
+        or payload.get("prompt")
+        or payload.get("instruction")
+        or payload.get("objective")
+        or payload.get("goal")
+        or ""
+    )
+    message = str(raw_message).strip() if raw_message else ""
     if not message:
         raise HTTPException(status_code=400, detail="Message is required")
         
-    business = db.query(Business).filter(Business.owner_id == current_user.id).first()
+    business = None
+    if current_user:
+        business = db.query(Business).filter(Business.owner_id == current_user.id).first()
     if not business:
         business = db.query(Business).first()
     if not business or not business.is_onboarded:

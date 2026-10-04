@@ -43,6 +43,7 @@ export default function AIManagerPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [aiConfigured, setAiConfigured] = useState<boolean | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   useEffect(() => {
     // Check AI Provider configuration status
@@ -91,8 +92,15 @@ export default function AIManagerPage() {
   ];
 
   const handleSend = async (customText?: string) => {
-    const textToSend = customText || input;
-    if (!textToSend.trim() || loading) return;
+    const rawText = customText !== undefined ? customText : input;
+    const textToSend = (rawText || '').trim();
+
+    if (!textToSend) {
+      setValidationError('Please enter a marketing directive or campaign objective before dispatching.');
+      return;
+    }
+    setValidationError(null);
+    if (loading) return;
 
     if (!isBusinessConfigured) {
       setMessages((prev) => [
@@ -163,7 +171,7 @@ export default function AIManagerPage() {
       );
       setLoading(false);
     } catch (err: any) {
-      const errorMsg = err.message || 'Error occurred';
+      const errorMsg = err.message || 'An error occurred during agent execution.';
       setMessages((prev) =>
         prev.map((m) =>
           m.id === sankalpMsgId
@@ -347,11 +355,21 @@ export default function AIManagerPage() {
               ))}
             </div>
 
+            {validationError && (
+              <div className="text-xs font-mono text-red-400 bg-red-950/30 border border-red-500/30 rounded-lg px-3 py-1.5 flex items-center gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                <span>{validationError}</span>
+              </div>
+            )}
+
             <div className="flex items-center gap-2">
               <input
                 type="text"
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  if (validationError) setValidationError(null);
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                 placeholder="Instruct SANKALP AI Manager (e.g. 'Create a 5-day campaign for our new drop')..."
                 disabled={loading}

@@ -102,7 +102,7 @@ class CloudinaryStorage(MediaStorage):
             "signature": signature,
         }
 
-        async with httpx.AsyncClient(timeout=35.0) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(75.0, connect=10.0)) as client:
             resp = await client.post(
                 f"https://api.cloudinary.com/v1_1/{self.cloud_name}/image/upload",
                 data=data_fields,
