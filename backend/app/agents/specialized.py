@@ -53,6 +53,26 @@ class StrategyAgent:
         logger.info(f"StrategyAgent constructing {duration_days}-day editorial roadmap")
         return await self.ai.generate_strategy(business_context, research, duration_days)
 
+    async def replan(
+        self,
+        business_context: Dict[str, Any],
+        current_strategy: Dict[str, Any],
+        performance_evidence: List[Dict[str, Any]],
+        learned_insights: List[Dict[str, Any]],
+        duration_days: int = 5
+    ) -> Dict[str, Any]:
+        logger.info(
+            f"StrategyAgent autonomously replanning roadmap based on {len(performance_evidence)} "
+            f"performance events and {len(learned_insights)} insights"
+        )
+        return await self.ai.replan_strategy(
+            business_context,
+            current_strategy,
+            performance_evidence,
+            learned_insights,
+            duration_days
+        )
+
     def run(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         objective = input_data.get("objective", "Promote products")
         research = input_data.get("research", {})

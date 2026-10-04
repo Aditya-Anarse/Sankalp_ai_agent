@@ -24,6 +24,7 @@ interface SocialAccountData {
   is_connected: boolean;
   status: 'NOT_CONNECTED' | 'CONNECTING' | 'CONNECTED' | 'EXPIRED' | 'ERROR';
   has_real_token?: boolean;
+  token_valid?: boolean;
   permissions: string[];
   last_synced_at: string | null;
   status_message: string;
@@ -68,10 +69,23 @@ export default function ConnectedAccountsPage() {
     }
   }, []);
 
-  const handleStartOAuth = (platform: string) => {
+  const handleStartOAuth = async (platform: string) => {
     setConnecting(platform);
-    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    window.location.href = `${backendUrl}/social-accounts/${platform}/authorize?redirect=true`;
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      let businessId = '';
+      try {
+        const biz = await api.business.get();
+        if (biz && biz.id) businessId = biz.id;
+      } catch (e) {
+        // ignore if not logged in
+      }
+      const queryParam = businessId ? `&business_id=${encodeURIComponent(businessId)}` : '';
+      window.location.href = `${backendUrl}/social-accounts/${platform}/authorize?redirect=true${queryParam}`;
+    } catch (err: any) {
+      setFeedback(err.message || 'Failed to initialize authorization');
+      setConnecting(null);
+    }
   };
 
   const handleDisconnect = async (id: string) => {
@@ -143,7 +157,7 @@ export default function ConnectedAccountsPage() {
 
           <div className="space-y-4">
             {platforms.map((p) => {
-              const connectedAcc = accounts.find((a) => a.platform === p.id && a.is_connected);
+              const connectedAcc = accounts.find((a) => a.platform === p.id && a.is_connected && a.token_valid !== false);
               const Icon = p.icon;
 
               return (
@@ -163,7 +177,7 @@ export default function ConnectedAccountsPage() {
                         {connectedAcc ? (
                           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-300 border-emerald-500/30 flex items-center gap-1">
                             <CheckCircle2 className="w-3 h-3" />
-                            Connected
+                            Connected & Verified
                           </span>
                         ) : (
                           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full border bg-slate-800 text-slate-400 border-slate-700">

@@ -7,6 +7,7 @@ import { WorkspaceSidebar } from '@/components/workspace/WorkspaceSidebar';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { GlassButton } from '@/components/ui/GlassButton';
 import { useApp } from '@/context/AppContext';
+import { api } from '@/lib/api';
 import {
   ArrowLeft,
   Flame,
@@ -29,13 +30,28 @@ import { motion } from 'framer-motion';
 export default function CampaignWorkspacePage() {
   const params = useParams();
   const router = useRouter();
-  const { campaigns, contentItems, runStepWorkflow, business } = useApp();
+  const { campaigns, contentItems, runStepWorkflow, business, refreshAll } = useApp();
   const campaignId = params?.id as string;
 
   const campaign = campaigns.find((c) => c.id === campaignId);
 
   const [activeStepTab, setActiveStepTab] = useState('creative');
   const [runningStep, setRunningStep] = useState<string | null>(null);
+  const [isReplanning, setIsReplanning] = useState(false);
+  const [replanData, setReplanData] = useState<any>(null);
+
+  const handleReplan = async () => {
+    setIsReplanning(true);
+    try {
+      const res = await api.campaigns.replan(campaignId);
+      setReplanData(res);
+      await refreshAll();
+    } catch (e: any) {
+      alert(`Replanning notice: ${e.message || e}`);
+    } finally {
+      setIsReplanning(false);
+    }
+  };
 
   if (!campaign) {
     return (
@@ -117,6 +133,13 @@ export default function CampaignWorkspacePage() {
       label: 'Learning Loop',
       status: campaign.status === 'completed' ? 'completed' : 'pending',
       summary: 'Autonomous pattern discovery calibrates future campaign strategies.',
+    },
+    {
+      id: 'replan',
+      agent: 'Replanning Engine',
+      label: 'Autonomous Replan',
+      status: campaign.status === 'replanned' ? 'completed' : 'ready',
+      summary: 'Evolves strategy, hooks, and format mix based on empirical telemetry.',
     }
   ];
 
@@ -189,10 +212,10 @@ export default function CampaignWorkspacePage() {
               <h2 className="text-sm font-mono uppercase tracking-wider text-slate-300 font-bold">
                 Agent Lifecycle Pipeline
               </h2>
-              <span className="text-xs font-mono text-cyan-400">Research → Strategy → Creative → QA → Publish → Learn</span>
+              <span className="text-xs font-mono text-cyan-400">Goal → Research → Strategy → Creative → QA → Publish → Analyze → Learn → Replan</span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
               {timelineSteps.map((step) => {
                 const isSelected = activeStepTab === step.id;
                 return (
@@ -357,6 +380,62 @@ export default function CampaignWorkspacePage() {
             {activeStepTab === 'learn' && (
               <div className="p-4 rounded-xl bg-cyan-950/20 border border-cyan-500/30 text-xs text-cyan-200">
                 Autonomous Learning Agent will continuously calibrate future hooks based on this sprint's engagement.
+              </div>
+            )}
+
+            {activeStepTab === 'replan' && (
+              <div className="space-y-4">
+                <div className="p-5 rounded-2xl bg-cyan-950/30 border border-cyan-400/40 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-cyan-400" /> Autonomous Campaign Replanning Engine
+                      </h4>
+                      <p className="text-xs text-slate-300 mt-1">
+                        Consumes real analytics telemetry and empirical learned insights to evolve the campaign roadmap.
+                      </p>
+                    </div>
+
+                    <GlassButton
+                      variant="cyanGlow"
+                      size="sm"
+                      onClick={handleReplan}
+                      disabled={isReplanning}
+                      icon={<Sparkles className="w-3.5 h-3.5" />}
+                    >
+                      {isReplanning ? 'Synthesizing Replan...' : 'Execute Autonomous Replan'}
+                    </GlassButton>
+                  </div>
+
+                  {replanData && (
+                    <div className="mt-4 pt-4 border-t border-white/[0.08] space-y-3 font-mono text-xs">
+                      <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.08]">
+                        <span className="text-cyan-300 font-bold block mb-1">Replanning Rationale:</span>
+                        <p className="text-slate-200">{replanData.replan_rationale}</p>
+                      </div>
+
+                      {replanData.strategic_shifts?.length > 0 && (
+                        <div>
+                          <span className="text-slate-400 block mb-1.5">Strategic Shifts Applied:</span>
+                          <div className="flex flex-wrap gap-2">
+                            {replanData.strategic_shifts.map((shift: string, idx: number) => (
+                              <span key={idx} className="px-2.5 py-1 rounded-lg bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 text-[11px]">
+                                ✦ {shift}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {replanData.projected_improvements && (
+                        <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] flex items-center justify-between">
+                          <span>Target Engagement Lift: {replanData.projected_improvements.target_engagement_lift}</span>
+                          <span>Confidence: {Math.round((replanData.projected_improvements.confidence || 0.9) * 100)}%</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </GlassCard>

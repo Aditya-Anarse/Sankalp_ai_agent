@@ -121,6 +121,11 @@ export const api = {
       request<any>(`/campaigns/${id}/approve`, {
         method: 'POST',
       }),
+    loopState: (id: string) => request<any>(`/campaigns/${id}/loop-state`),
+    replan: (id: string) =>
+      request<any>(`/campaigns/${id}/replan`, {
+        method: 'POST',
+      }),
     delete: (id: string) =>
       request<any>(`/campaigns/${id}`, {
         method: 'DELETE',
@@ -163,6 +168,7 @@ export const api = {
   socialAccounts: {
     list: () => request<any[]>('/social-accounts'),
     diagnostics: () => request<any>('/social-accounts/diagnostics'),
+    instagramStatus: () => request<any>('/social-accounts/instagram/connection-status'),
     disconnect: (id: string) =>
       request<any>(`/social-accounts/${id}`, {
         method: 'DELETE',
@@ -189,6 +195,18 @@ export const api = {
   analytics: {
     get: (days: number = 30) => request<any>(`/analytics?days=${days}`),
     content: (id: string) => request<any>(`/analytics/content/${id}`),
+    sync: () =>
+      request<any>('/analytics/sync', {
+        method: 'POST',
+      }),
+  },
+
+  scheduler: {
+    status: () => request<any>('/scheduler/status'),
+    trigger: () =>
+      request<any>('/scheduler/trigger', {
+        method: 'POST',
+      }),
   },
 
   calendar: {

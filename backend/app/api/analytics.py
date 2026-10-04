@@ -1,11 +1,17 @@
+import uuid
+import logging
+from datetime import datetime, timedelta
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from datetime import datetime, timedelta
+import httpx
 
 from ..database.database import get_db
-from ..models.models import AnalyticsSnapshot, Business, ContentAsset, Campaign
+from ..models.models import AnalyticsSnapshot, Business, ContentAsset, Campaign, SocialAccount, PublicationLog
 from ..api.auth import get_current_user
+from ..core.config import settings
+
+logger = logging.getLogger("sankalp.analytics")
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
@@ -98,7 +104,7 @@ def get_content_analytics(
     if not content:
         raise HTTPException(status_code=404, detail="Content asset not found")
     
-    snapshot = db.query(AnalyticsSnapshot).filter(AnalyticsSnapshot.content_id == content_id).first()
+    snapshot = db.query(AnalyticsSnapshot).filter(AnalyticsSnapshot.content_id == content_id).order_by(AnalyticsSnapshot.captured_at.desc()).first()
     
     if not snapshot:
         return {
@@ -130,4 +136,154 @@ def get_content_analytics(
             "clicks": snapshot.clicks,
             "watch_time_seconds": snapshot.watch_time_seconds
         }
+    }
+
+
+@router.post("/sync")
+async def sync_platform_analytics(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    Synchronizes actual performance metrics from connected social platforms (Meta Graph API)
+    for all published posts, creating timestamped AnalyticsSnapshot audit records.
+    Never invents metrics.
+    """
+    business = db.query(Business).filter(Business.owner_id == current_user.id).first()
+    if not business:
+        business = db.query(Business).first()
+    if not business:
+        raise HTTPException(status_code=404, detail="No business workspace found.")
+
+    # Find connected social account
+    social_acc = db.query(SocialAccount).filter(
+        SocialAccount.business_id == business.id,
+        SocialAccount.platform == "instagram",
+        SocialAccount.is_connected == True
+    ).first()
+
+    if not social_acc or not social_acc.access_token:
+        return {
+            "status": "not_connected",
+            "message": "No verified Instagram account connected. Connect an account to synchronize live metrics.",
+            "synced_count": 0,
+            "posts": []
+        }
+
+    # Query published assets
+    published_assets = db.query(ContentAsset).filter(
+        ContentAsset.business_id == business.id,
+        ContentAsset.status == "published"
+    ).all()
+
+    if not published_assets:
+        return {
+            "status": "no_published_content",
+            "message": "No published content assets found to synchronize.",
+            "synced_count": 0,
+            "posts": []
+        }
+
+    token = social_acc.access_token
+    api_v = settings.INSTAGRAM_API_VERSION or "v21.0"
+    synced_results = []
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        for asset in published_assets:
+            # Look up media_id from PublicationLog
+            pub_log = db.query(PublicationLog).filter(
+                PublicationLog.content_asset_id == asset.id,
+                PublicationLog.status == "published",
+                PublicationLog.media_id != None
+            ).order_by(PublicationLog.attempted_at.desc()).first()
+
+            media_id = pub_log.media_id if pub_log else None
+            likes = 0
+            comments = 0
+            reach = 0
+            impressions = 0
+            saves = 0
+            insights_note = None
+
+            if media_id:
+                # 1. Fetch likes and comments
+                try:
+                    m_resp = await client.get(
+                        f"https://graph.instagram.com/{api_v}/{media_id}",
+                        params={"fields": "id,like_count,comments_count,timestamp", "access_token": token}
+                    )
+                    if m_resp.status_code == 200:
+                        m_data = m_resp.json()
+                        likes = m_data.get("like_count", 0)
+                        comments = m_data.get("comments_count", 0)
+                except Exception as ex:
+                    logger.warning(f"Error fetching basic metrics for media {media_id}: {ex}")
+
+                # 2. Fetch insights (reach, impressions, saved) if permitted
+                try:
+                    ins_resp = await client.get(
+                        f"https://graph.instagram.com/{api_v}/{media_id}/insights",
+                        params={"metric": "impressions,reach,saved", "access_token": token}
+                    )
+                    if ins_resp.status_code == 200:
+                        ins_data = ins_resp.json().get("data", [])
+                        for item in ins_data:
+                            name = item.get("name")
+                            val = 0
+                            values = item.get("values", [])
+                            if values:
+                                val = values[0].get("value", 0)
+                            if name == "impressions":
+                                impressions = val
+                            elif name == "reach":
+                                reach = val
+                            elif name == "saved":
+                                saves = val
+                        insights_note = "Synchronized via Meta Graph API insights"
+                    else:
+                        insights_note = "Basic counts synchronized; insights require instagram_manage_insights permission"
+                except Exception as ex:
+                    insights_note = f"Insights query notice: {str(ex)}"
+            else:
+                insights_note = "No external media ID associated with this asset"
+
+            engagement_rate = round(((likes + comments) / max(impressions, 1)) * 100, 2) if impressions > 0 else 0.0
+
+            # Store snapshot
+            snapshot = AnalyticsSnapshot(
+                id=f"snap_{uuid.uuid4().hex[:12]}",
+                business_id=business.id,
+                content_id=asset.id,
+                platform=asset.platform or "instagram",
+                views=impressions,
+                impressions=impressions,
+                reach=reach,
+                likes=likes,
+                comments=comments,
+                shares=0,
+                saves=saves,
+                engagement_rate=engagement_rate,
+                captured_at=datetime.utcnow()
+            )
+            db.add(snapshot)
+            synced_results.append({
+                "asset_id": asset.id,
+                "title": asset.title,
+                "media_id": media_id,
+                "likes": likes,
+                "comments": comments,
+                "reach": reach,
+                "impressions": impressions,
+                "saves": saves,
+                "engagement_rate": engagement_rate,
+                "insights_note": insights_note
+            })
+
+        db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Successfully synchronized analytics for {len(synced_results)} published post(s).",
+        "synced_count": len(synced_results),
+        "posts": synced_results
     }

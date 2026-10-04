@@ -1,9 +1,12 @@
 import json
 import uuid
+import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger("sankalp.content")
 
 from ..database.database import get_db
 from ..models.models import ContentAsset, Business, Campaign, SocialAccount, PublicationLog, PublishedPost
@@ -195,7 +198,18 @@ def schedule_content(id: str, payload: dict, db: Session = Depends(get_db)):
     a.status = "scheduled"
     if "scheduled_at" in payload and payload["scheduled_at"]:
         a.scheduled_at = datetime.fromisoformat(payload["scheduled_at"].replace("Z", "+00:00"))
+    else:
+        from datetime import timedelta
+        a.scheduled_at = datetime.utcnow() + timedelta(hours=24)
     db.commit()
+
+    # Register with persistent scheduler
+    try:
+        from ..scheduler import enqueue_scheduled_content
+        enqueue_scheduled_content(a.id, a.scheduled_at)
+    except Exception as ex:
+        logger.warning(f"Notice enqueuing scheduled job for asset {a.id}: {ex}")
+
     return {"status": "scheduled", "id": a.id, "scheduled_at": a.scheduled_at}
 
 

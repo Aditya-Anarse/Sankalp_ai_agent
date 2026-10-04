@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database.database import get_db
-from ..models.models import Campaign, CampaignStep, ContentAsset, Business, Product, BrandProfile
+from ..models.models import Campaign, CampaignStep, ContentAsset, Business, Product, BrandProfile, AnalyticsSnapshot, LearningInsight, AgentRun
 from ..schemas.schemas import CampaignCreate, CampaignResponse
 from ..agents.orchestrator import AgentOrchestrator
 from ..agents.specialized import ResearchAgent, StrategyAgent, CreativeAgent, QualityAgent
@@ -271,6 +271,16 @@ def approve_campaign(id: str, db: Session = Depends(get_db)):
         asset.scheduled_at = now + timedelta(days=idx+1, hours=18)
     
     db.commit()
+
+    # Enqueue in persistent scheduler
+    try:
+        from ..scheduler import enqueue_scheduled_content
+        for asset in assets:
+            if asset.scheduled_at:
+                enqueue_scheduled_content(asset.id, asset.scheduled_at)
+    except Exception as ex:
+        pass
+
     return {"status": "approved", "campaign_id": id, "scheduled_assets_count": len(assets)}
 
 
@@ -282,3 +292,223 @@ def delete_campaign(id: str, db: Session = Depends(get_db)):
     db.delete(c)
     db.commit()
     return {"status": "deleted", "id": id}
+
+
+@router.get("/{id}/loop-state")
+def get_campaign_loop_state(id: str, db: Session = Depends(get_db)):
+    """
+    Returns structured autonomous agent loop state:
+    Goal -> Research -> Strategy -> Create -> QA -> Publish -> Analyze -> Learn -> Replan.
+    """
+    c = db.query(Campaign).filter(Campaign.id == id).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    biz = db.query(Business).filter(Business.id == c.business_id).first()
+    assets = db.query(ContentAsset).filter(ContentAsset.campaign_id == id).all()
+
+    completed_steps = [
+        {
+            "id": a.id,
+            "title": a.title,
+            "platform": a.platform,
+            "content_type": a.content_type,
+            "status": a.status,
+            "published_at": a.published_at.isoformat() if a.published_at else None,
+            "published_url": a.published_url,
+        }
+        for a in assets
+        if a.status == "published"
+    ]
+
+    pending_steps = [
+        {
+            "id": a.id,
+            "title": a.title,
+            "platform": a.platform,
+            "content_type": a.content_type,
+            "status": a.status,
+            "scheduled_at": a.scheduled_at.isoformat() if a.scheduled_at else None,
+            "quality_status": a.quality_status,
+        }
+        for a in assets
+        if a.status != "published"
+    ]
+
+    asset_ids = [a.id for a in assets]
+    snapshots = (
+        db.query(AnalyticsSnapshot)
+        .filter(AnalyticsSnapshot.content_id.in_(asset_ids))
+        .order_by(AnalyticsSnapshot.captured_at.desc())
+        .all()
+    ) if asset_ids else []
+
+    performance_evidence = [
+        {
+            "content_id": s.content_id,
+            "platform": s.platform,
+            "reach": s.reach,
+            "impressions": s.impressions,
+            "likes": s.likes,
+            "comments": s.comments,
+            "engagement_rate": s.engagement_rate,
+            "captured_at": s.captured_at.isoformat(),
+        }
+        for s in snapshots
+    ]
+
+    insights = (
+        db.query(LearningInsight)
+        .filter(
+            (LearningInsight.business_id == c.business_id) |
+            (LearningInsight.campaign_id == c.id)
+        )
+        .order_by(LearningInsight.created_at.desc())
+        .limit(5)
+        .all()
+    )
+
+    learned_insights = [
+        {
+            "id": i.id,
+            "category": i.category,
+            "insight": i.insight_text,
+            "evidence": i.evidence,
+            "recommendation": i.recommendation,
+            "confidence_score": i.confidence_score,
+        }
+        for i in insights
+    ]
+
+    next_recommended_actions = []
+    if len(completed_steps) == 0:
+        next_recommended_actions.append("Publish or schedule initial campaign assets to start telemetry loop.")
+    elif len(performance_evidence) == 0:
+        next_recommended_actions.append("Synchronize platform analytics (/analytics/sync) to capture post engagement.")
+    elif len(learned_insights) == 0:
+        next_recommended_actions.append("Run Learning Agent analysis (/learning/analyze) to synthesize empirical patterns.")
+    else:
+        next_recommended_actions.append("Execute autonomous replanning to optimize future content mix using learned insights.")
+
+    strategy_data = json.loads(c.strategy_json) if c.strategy_json else None
+    research_data = json.loads(c.research_json) if c.research_json else None
+
+    return {
+        "campaign_id": c.id,
+        "name": c.name,
+        "goal": c.objective,
+        "status": c.status,
+        "current_strategy": strategy_data,
+        "research_signals": research_data.get("trends", []) if research_data else [],
+        "completed_steps": completed_steps,
+        "pending_steps": pending_steps,
+        "published_assets_count": len(completed_steps),
+        "performance_evidence": performance_evidence,
+        "learned_insights": learned_insights,
+        "next_recommended_actions": next_recommended_actions,
+    }
+
+
+@router.post("/{id}/replan")
+async def replan_campaign_roadmap(id: str, db: Session = Depends(get_db)):
+    """
+    Autonomous Replanning: Consumes real performance evidence and learned insights
+    to adapt and optimize the campaign roadmap, synthesizing improved assets.
+    """
+    c = db.query(Campaign).filter(Campaign.id == id).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    biz = db.query(Business).filter(Business.id == c.business_id).first()
+    if not biz:
+        raise HTTPException(status_code=404, detail="No business workspace found.")
+
+    # 1. Collect real performance evidence
+    assets = db.query(ContentAsset).filter(ContentAsset.campaign_id == id).all()
+    asset_ids = [a.id for a in assets]
+    snapshots = (
+        db.query(AnalyticsSnapshot)
+        .filter(AnalyticsSnapshot.content_id.in_(asset_ids))
+        .all()
+    ) if asset_ids else []
+
+    performance_evidence = [
+        {
+            "content_id": s.content_id,
+            "likes": s.likes,
+            "comments": s.comments,
+            "reach": s.reach,
+            "impressions": s.impressions,
+            "engagement_rate": s.engagement_rate,
+        }
+        for s in snapshots
+    ]
+
+    # 2. Collect active learned insights
+    insights = (
+        db.query(LearningInsight)
+        .filter(LearningInsight.business_id == biz.id)
+        .order_by(LearningInsight.created_at.desc())
+        .limit(6)
+        .all()
+    )
+    learned_insights = [
+        {
+            "category": i.category,
+            "insight_text": i.insight_text,
+            "recommendation": i.recommendation,
+        }
+        for i in insights
+    ]
+
+    current_strategy = json.loads(c.strategy_json) if c.strategy_json else {}
+
+    # 3. StrategyAgent replans
+    strategy_agent = StrategyAgent()
+    biz_context = {
+        "id": biz.id,
+        "name": biz.name,
+        "business_type": biz.business_type,
+        "products": [{"name": p.name, "price": p.price} for p in biz.products],
+    }
+
+    t0 = time.time()
+    replanned_strategy = await strategy_agent.replan(
+        biz_context,
+        current_strategy,
+        performance_evidence,
+        learned_insights,
+        c.duration_days,
+    )
+    duration_ms = int((time.time() - t0) * 1000)
+
+    # Persist replanned strategy
+    c.strategy_json = json.dumps(replanned_strategy)
+    c.status = "replanned"
+    c.updated_at = datetime.utcnow()
+
+    # Log agent run
+    run_log = AgentRun(
+        id=f"run_replan_{int(time.time()*1000)}",
+        business_id=biz.id,
+        campaign_id=c.id,
+        agent_name="StrategyAgent",
+        action="Autonomously replanned campaign roadmap",
+        status="completed",
+        duration_ms=duration_ms,
+        decision_trace=f"Synthesized replan based on {len(performance_evidence)} telemetry snapshots and {len(learned_insights)} insights. Shifts: {replanned_strategy.get('strategic_shifts', [])}",
+        timestamp=datetime.utcnow(),
+    )
+    db.add(run_log)
+    db.commit()
+
+    return {
+        "status": "success",
+        "campaign_id": c.id,
+        "replan_rationale": replanned_strategy.get("replan_rationale"),
+        "strategic_shifts": replanned_strategy.get("strategic_shifts", []),
+        "recommended_format_mix": replanned_strategy.get("recommended_format_mix", {}),
+        "content_pillars": replanned_strategy.get("content_pillars", []),
+        "replanned_schedule": replanned_strategy.get("schedule", []),
+        "projected_improvements": replanned_strategy.get("projected_improvements", {}),
+    }

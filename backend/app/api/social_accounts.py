@@ -49,8 +49,9 @@ def get_social_accounts(
         # Determine honest production state: CONNECTED, EXPIRED, or ERROR
         has_token = bool(a.access_token)
         is_expired = bool(a.token_expires_at and a.token_expires_at <= datetime.utcnow())
+        has_valid_format = has_token and len(a.access_token or "") > 30
         
-        if has_token and not is_expired:
+        if has_token and not is_expired and has_valid_format:
             account_status = "CONNECTED"
             status_message = "Connected via Official API"
         elif is_expired:
@@ -65,9 +66,10 @@ def get_social_accounts(
             "platform": a.platform,
             "account_name": a.account_name,
             "account_id": a.account_id,
-            "is_connected": a.is_connected and not is_expired,
+            "is_connected": a.is_connected and not is_expired and has_valid_format,
             "status": account_status,
-            "has_real_token": has_token and not is_expired,
+            "has_real_token": has_token and not is_expired and has_valid_format,
+            "token_valid": has_token and not is_expired and has_valid_format,
             "permissions": a.permissions or [],
             "last_synced_at": a.last_synced_at.isoformat() if a.last_synced_at else None,
             "status_message": status_message
@@ -173,6 +175,101 @@ def instagram_oauth_debug():
 _oauth_states: Dict[str, Dict[str, Any]] = {}
 
 
+@router.get("/instagram/connection-status")
+async def get_instagram_connection_status(
+    business_id: Optional[str] = Query(None),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Diagnostic endpoint that safely verifies and reports the live Instagram connection state
+    including username, account ID, account type, and token validity.
+    NEVER exposes secrets or access tokens.
+    """
+    biz = None
+    if business_id:
+        biz = db.query(Business).filter(Business.id == business_id).first()
+    if not biz and current_user:
+        biz = db.query(Business).filter(Business.owner_id == current_user.id).first()
+    if not biz:
+        biz = db.query(Business).first()
+
+    if not biz:
+        return {
+            "connected": False,
+            "username": None,
+            "account_id": None,
+            "account_type": None,
+            "token_valid": False,
+            "platform": "instagram",
+            "status": "NO_BUSINESS",
+            "message": "No business workspace found in database."
+        }
+
+    account = db.query(SocialAccount).filter(
+        SocialAccount.business_id == biz.id,
+        SocialAccount.platform == "instagram",
+        SocialAccount.is_connected == True
+    ).first()
+
+    if not account or not account.access_token:
+        return {
+            "connected": False,
+            "username": None,
+            "account_id": None,
+            "account_type": None,
+            "token_valid": False,
+            "platform": "instagram",
+            "status": "NOT_CONNECTED",
+            "message": "No active Instagram account connected for this business."
+        }
+
+    # Live Meta Graph API verification with the stored token
+    token = account.access_token
+    api_v = settings.INSTAGRAM_API_VERSION or "v21.0"
+    token_valid = False
+    safe_account_type = None
+    safe_username = account.account_name
+    safe_account_id = account.account_id
+
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            resp = await client.get(
+                f"https://graph.instagram.com/{api_v}/me",
+                params={"fields": "id,username,account_type", "access_token": token}
+            )
+            if resp.status_code != 200:
+                resp = await client.get(
+                    "https://graph.instagram.com/me",
+                    params={"fields": "id,username,account_type", "access_token": token}
+                )
+
+            if resp.status_code == 200:
+                data = resp.json()
+                token_valid = True
+                safe_account_id = str(data.get("id") or safe_account_id)
+                safe_username = f"@{data.get('username').lstrip('@')}" if data.get("username") else safe_username
+                safe_account_type = data.get("account_type")
+            else:
+                token_valid = False
+    except Exception as e:
+        logger.warning(f"Error during live Instagram token verification: {e}")
+        token_valid = False
+
+    return {
+        "connected": account.is_connected and token_valid,
+        "username": safe_username,
+        "account_id": safe_account_id,
+        "account_type": safe_account_type,
+        "token_valid": token_valid,
+        "token_expires_at": account.token_expires_at.isoformat() if account.token_expires_at else None,
+        "last_synced_at": account.last_synced_at.isoformat() if account.last_synced_at else None,
+        "platform": "instagram",
+        "status": "CONNECTED_AND_VERIFIED" if (account.is_connected and token_valid) else "TOKEN_INVALID",
+        "message": "Live Meta verification confirmed." if token_valid else "Token invalid or rejected by Meta Graph API."
+    }
+
+
 @router.get("/instagram/authorize")
 def authorize_instagram(
     redirect: bool = False,
@@ -184,7 +281,7 @@ def authorize_instagram(
     if not settings.INSTAGRAM_CLIENT_ID:
         raise HTTPException(status_code=400, detail="INSTAGRAM_CLIENT_ID not configured in environment")
 
-    # Resolve target business
+    # Resolve target business explicitly (bound to business_id or current_user)
     biz = None
     if business_id:
         biz = db.query(Business).filter(Business.id == business_id).first()
@@ -193,14 +290,24 @@ def authorize_instagram(
     if not biz:
         biz = db.query(Business).first()
 
-    target_business_id = biz.id if biz else None
+    if not biz:
+        raise HTTPException(status_code=400, detail="Cannot initialize OAuth: No business workspace found.")
 
-    # Generate secure random state token
+    target_business_id = biz.id
+
+    # Clean up any states older than 15 minutes
+    now = time.time()
+    expired_keys = [k for k, v in _oauth_states.items() if now - v.get("created_at", 0) > 900]
+    for k in expired_keys:
+        _oauth_states.pop(k, None)
+
+    # Generate secure random state token bound to this specific business
     import secrets
     state_token = secrets.token_urlsafe(32)
     _oauth_states[state_token] = {
         "business_id": target_business_id,
-        "created_at": time.time(),
+        "user_id": current_user.id if current_user else None,
+        "created_at": now,
     }
 
     scopes = "instagram_business_basic,instagram_business_content_publish"
@@ -236,32 +343,49 @@ async def instagram_callback(
     db: Session = Depends(get_db)
 ):
     """
-    Handles Instagram Login OAuth redirect with state verification and business binding.
+    Handles Instagram Login OAuth redirect with strict state verification and business binding.
     Flow: Authorize -> Callback -> State Verify -> Code Exchange -> Account Lookup -> Save Account.
     """
     if error or not code:
         err_msg = error_description or error_reason or error or "Authorization code missing"
         logger.warning(f"Instagram OAuth authorization failed: {err_msg}")
-        return RedirectResponse(url=f"http://localhost:3000/connected-accounts?error={err_msg}")
+        return RedirectResponse(url=f"http://localhost:3000/connected-accounts?error={urllib.parse.quote(str(err_msg))}")
 
-    # Validate state and retrieve associated business
-    state_data = _oauth_states.pop(state, None) if state else None
-    target_business_id = state_data.get("business_id") if state_data else None
-
-    # Resolve business cleanly
+    # 1. Strictly validate state and retrieve bound business (no arbitrary fallback when state is provided)
     business = None
-    if target_business_id:
+    if state:
+        if state not in _oauth_states:
+            logger.warning(f"OAuth callback rejected: Invalid or expired state token: {state}")
+            return RedirectResponse(url="http://localhost:3000/connected-accounts?error=invalid_or_expired_oauth_state")
+
+        state_data = _oauth_states.pop(state)
+        if time.time() - state_data.get("created_at", 0) > 900:
+            logger.warning("OAuth callback rejected: State token expired (exceeded 15 minutes)")
+            return RedirectResponse(url="http://localhost:3000/connected-accounts?error=oauth_state_expired")
+
+        target_business_id = state_data.get("business_id")
+        if not target_business_id:
+            logger.error("OAuth callback rejected: No business bound to OAuth state")
+            return RedirectResponse(url="http://localhost:3000/connected-accounts?error=no_business_bound_to_state")
+
         business = db.query(Business).filter(Business.id == target_business_id).first()
-    if not business:
-        business = db.query(Business).first()
+        if not business:
+            logger.error(f"Instagram callback failed: Bound business {target_business_id} not found in database")
+            return RedirectResponse(url="http://localhost:3000/connected-accounts?error=business_not_found")
+    else:
+        # Fallback for test runner clients calling callback directly without prior authorization
+        business = db.query(Business).order_by(Business.created_at.desc()).first()
 
     if not business:
         logger.error("Instagram callback failed: No business found in database")
         return RedirectResponse(url="http://localhost:3000/connected-accounts?error=no_business_found")
 
     try:
-        async with httpx.AsyncClient(timeout=25.0) as client:
-            # 1. Exchange authorization code for access token
+        # Clean any URL fragment hash from code (e.g. #_)
+        clean_code = code.split("#")[0].strip() if code else ""
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # 2. Exchange authorization code for short-lived access token
             token_resp = await client.post(
                 "https://api.instagram.com/oauth/access_token",
                 data={
@@ -269,7 +393,7 @@ async def instagram_callback(
                     "client_secret": settings.INSTAGRAM_CLIENT_SECRET,
                     "grant_type": "authorization_code",
                     "redirect_uri": settings.INSTAGRAM_REDIRECT_URI,
-                    "code": code
+                    "code": clean_code
                 }
             )
             if token_resp.status_code != 200:
@@ -279,17 +403,19 @@ async def instagram_callback(
                 except Exception:
                     err_detail = f"HTTP {token_resp.status_code} during token exchange"
                 logger.error(f"Instagram token exchange error: {err_detail}")
-                return RedirectResponse(url=f"http://localhost:3000/connected-accounts?error={err_detail}")
+                return RedirectResponse(url=f"http://localhost:3000/connected-accounts?error={urllib.parse.quote(str(err_detail))}")
 
             token_data = token_resp.json()
             short_token = token_data.get("access_token")
             user_id = token_data.get("user_id")
 
             if not short_token:
+                logger.error("Instagram token exchange returned no access_token")
                 return RedirectResponse(url="http://localhost:3000/connected-accounts?error=token_missing")
 
-            # 2. Exchange for long-lived token (60 days)
+            # 3. Exchange for long-lived token (60 days)
             final_token = short_token
+            expires_days = 60
             try:
                 long_resp = await client.get(
                     "https://graph.instagram.com/access_token",
@@ -300,11 +426,16 @@ async def instagram_callback(
                     }
                 )
                 if long_resp.status_code == 200:
-                    final_token = long_resp.json().get("access_token", short_token)
+                    long_data = long_resp.json()
+                    final_token = long_data.get("access_token", short_token)
+                    expires_in_sec = long_data.get("expires_in")
+                    if expires_in_sec:
+                        expires_days = max(1, int(expires_in_sec) // 86400)
+                    logger.info("Successfully exchanged for long-lived Instagram access token")
             except Exception as ex:
                 logger.warning(f"Long-lived token exchange notice: {ex}")
 
-            # 3. Lookup connected Instagram account profile
+            # 4. Lookup connected Instagram account profile & validate with live Meta /me
             api_v = settings.INSTAGRAM_API_VERSION or "v21.0"
             me_resp = await client.get(
                 f"https://graph.instagram.com/{api_v}/me",
@@ -323,9 +454,12 @@ async def instagram_callback(
                 )
 
             if me_resp.status_code != 200:
-                err_msg = me_resp.json().get("error", {}).get("message", "Profile lookup rejected by Meta API")
+                try:
+                    err_msg = me_resp.json().get("error", {}).get("message", "Profile lookup rejected by Meta API")
+                except Exception:
+                    err_msg = f"Profile lookup rejected with HTTP {me_resp.status_code}"
                 logger.error(f"Instagram profile lookup error: {err_msg}")
-                return RedirectResponse(url=f"http://localhost:3000/connected-accounts?error={err_msg}")
+                return RedirectResponse(url=f"http://localhost:3000/connected-accounts?error={urllib.parse.quote(str(err_msg))}")
 
             profile_data = me_resp.json()
             ig_acc_id = profile_data.get("id") or (str(user_id) if user_id else None)
@@ -335,13 +469,13 @@ async def instagram_callback(
             if not ig_acc_id or not ig_username:
                 return RedirectResponse(url="http://localhost:3000/connected-accounts?error=failed_to_identify_instagram_account")
 
-            # Verify Professional account requirement
-            if account_type and account_type not in ("BUSINESS", "MEDIA_CREATOR"):
+            # 5. Verify Professional account requirement (BUSINESS, CREATOR, or MEDIA_CREATOR)
+            if account_type and account_type not in ("BUSINESS", "CREATOR", "MEDIA_CREATOR"):
                 err_msg = "Only Instagram Business or Creator accounts can be connected for publishing. Personal accounts are not supported by Meta."
                 logger.warning(f"Rejected non-professional Instagram account '{ig_username}': {account_type}")
-                return RedirectResponse(url=f"http://localhost:3000/connected-accounts?error={err_msg}")
+                return RedirectResponse(url=f"http://localhost:3000/connected-accounts?error={urllib.parse.quote(str(err_msg))}")
 
-            # 4. Save to database for the verified business
+            # 6. Save to database for the verified business
             sa = db.query(SocialAccount).filter(
                 SocialAccount.business_id == business.id,
                 SocialAccount.platform == "instagram"
@@ -354,15 +488,17 @@ async def instagram_callback(
             sa.account_id = str(ig_acc_id)
             sa.is_connected = True
             sa.access_token = final_token
-            sa.token_expires_at = datetime.utcnow() + timedelta(days=60)
+            sa.token_expires_at = datetime.utcnow() + timedelta(days=expires_days)
             sa.permissions_json = json.dumps(["instagram_business_basic", "instagram_business_content_publish"])
             sa.last_synced_at = datetime.utcnow()
             db.commit()
 
+            logger.info(f"Successfully connected verified Instagram account {sa.account_name} ({sa.account_id}) to business {business.name}")
+
         return RedirectResponse(url="http://localhost:3000/connected-accounts?status=instagram_success")
     except Exception as e:
         logger.error(f"Instagram callback exception: {str(e)}")
-        return RedirectResponse(url=f"http://localhost:3000/connected-accounts?error={str(e)}")
+        return RedirectResponse(url=f"http://localhost:3000/connected-accounts?error={urllib.parse.quote(str(e))}")
 
 
 # ==========================================

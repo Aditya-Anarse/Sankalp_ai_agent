@@ -81,6 +81,17 @@ class AIProvider(ABC):
     ) -> List[Dict[str, Any]]:
         pass
 
+    @abstractmethod
+    async def replan_strategy(
+        self,
+        business_context: Dict[str, Any],
+        current_strategy: Dict[str, Any],
+        performance_evidence: List[Dict[str, Any]],
+        learned_insights: List[Dict[str, Any]],
+        duration_days: int
+    ) -> Dict[str, Any]:
+        pass
+
 
 async def _generate_openai_image(prompt: str) -> Optional[bytes]:
     """
@@ -593,6 +604,45 @@ Return ONLY valid JSON as a list of insights:
             return parsed
         return []
 
+    async def replan_strategy(
+        self,
+        business_context: Dict[str, Any],
+        current_strategy: Dict[str, Any],
+        performance_evidence: List[Dict[str, Any]],
+        learned_insights: List[Dict[str, Any]],
+        duration_days: int = 5
+    ) -> Dict[str, Any]:
+        prompt = f"""
+You are the Autonomous Strategy & Replanning Agent for SANKALP.
+Your mission is to adapt and evolve the marketing roadmap based on real historical performance telemetry and empirical learning insights.
+
+Business: {business_context.get('name')}
+Products: {[p.get('name') for p in business_context.get('products', [])]}
+Current Strategy Pillars: {json.dumps(current_strategy.get('content_pillars', []))}
+Performance Evidence: {json.dumps(performance_evidence[:5])}
+Learned Insights: {json.dumps([i.get('insight_text') or i.get('insight') for i in learned_insights[:5]])}
+
+Synthesize an optimized {duration_days}-day replanned strategy. Double down on themes and formats that demonstrated high engagement, and pivot away from underperforming hooks or angles.
+
+Return ONLY valid JSON matching this schema:
+{{
+  "replan_rationale": "Clear rationale explaining strategic pivot based on performance data and learning insights",
+  "strategic_shifts": ["Shift 1", "Shift 2"],
+  "recommended_format_mix": {{"Carousel": "40%", "Post": "30%", "Reel": "30%"}},
+  "content_pillars": ["Optimized Pillar 1", "Optimized Pillar 2", "Optimized Pillar 3"],
+  "schedule": [
+    {{"day": 1, "title": "Day 1 Optimized Hook", "format": "Post", "objective_focus": "High engagement hook", "platform": "Instagram"}},
+    {{"day": 2, "title": "Day 2 Performance Pillar", "format": "Post", "objective_focus": "Core feature spotlight", "platform": "Instagram"}}
+  ],
+  "projected_improvements": {{"target_engagement_lift": "+25%", "confidence": 0.92}}
+}}
+"""
+        raw = await self._call_gemini(prompt)
+        parsed = _parse_json_from_llm(raw) if raw else None
+        if parsed and isinstance(parsed, dict) and "schedule" in parsed:
+            return parsed
+        raise HTTPException(status_code=502, detail="AI provider unavailable for replanning.")
+
 
 class GroqProvider(AIProvider):
     """Groq Cloud LPU integration (qwen/qwen3.8-27b / openai/gpt-oss-120b)."""
@@ -778,6 +828,42 @@ Return ONLY valid JSON as a list of insights:
         if parsed and isinstance(parsed, list):
             return parsed
         return []
+
+    async def replan_strategy(
+        self,
+        business_context: Dict[str, Any],
+        current_strategy: Dict[str, Any],
+        performance_evidence: List[Dict[str, Any]],
+        learned_insights: List[Dict[str, Any]],
+        duration_days: int = 5
+    ) -> Dict[str, Any]:
+        prompt = f"""
+You are the Autonomous Strategy & Replanning Agent for SANKALP.
+Business: {business_context.get('name')}
+Products: {[p.get('name') for p in business_context.get('products', [])]}
+Current Strategy: {json.dumps(current_strategy.get('content_pillars', []))}
+Performance Evidence: {json.dumps(performance_evidence[:5])}
+Learned Insights: {json.dumps([i.get('insight_text') or i.get('insight') for i in learned_insights[:5]])}
+
+Synthesize an optimized {duration_days}-day replanned strategy.
+Return ONLY valid JSON matching this schema:
+{{
+  "replan_rationale": "Clear rationale explaining strategic pivot based on performance data and learning insights",
+  "strategic_shifts": ["Shift 1", "Shift 2"],
+  "recommended_format_mix": {{"Carousel": "40%", "Post": "30%", "Reel": "30%"}},
+  "content_pillars": ["Optimized Pillar 1", "Optimized Pillar 2", "Optimized Pillar 3"],
+  "schedule": [
+    {{"day": 1, "title": "Day 1 Optimized Hook", "format": "Post", "objective_focus": "High engagement hook", "platform": "Instagram"}},
+    {{"day": 2, "title": "Day 2 Performance Pillar", "format": "Post", "objective_focus": "Core feature spotlight", "platform": "Instagram"}}
+  ],
+  "projected_improvements": {{"target_engagement_lift": "+25%", "confidence": 0.92}}
+}}
+"""
+        raw = await self._call_groq(prompt)
+        parsed = _parse_json_from_llm(raw) if raw else None
+        if parsed and isinstance(parsed, dict) and "schedule" in parsed:
+            return parsed
+        raise HTTPException(status_code=502, detail="AI provider unavailable for replanning.")
 
 
 def is_ai_configured() -> bool:

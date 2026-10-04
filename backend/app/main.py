@@ -11,7 +11,8 @@ from .models.models import (
     User, Business, Product, AudienceProfile, BrandProfile, MarketingGoal,
     ContentPreference, SocialAccount, Campaign, ContentAsset, LearningInsight, AgentRun
 )
-from .api import auth, business, campaigns, content, analytics, learning, agent, social_accounts, calendar, notifications
+from .api import auth, business, campaigns, content, analytics, learning, agent, social_accounts, calendar, notifications, scheduler
+from .scheduler import start_scheduler, shutdown_scheduler
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -51,6 +52,7 @@ app.include_router(agent.router)
 app.include_router(social_accounts.router)
 app.include_router(calendar.router)
 app.include_router(notifications.router)
+app.include_router(scheduler.router)
 
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -61,7 +63,13 @@ app.mount("/media", StaticFiles(directory=str(media_path)), name="media")
 from .ai.providers import is_ai_configured
 
 @app.on_event("startup")
-def log_startup_diagnostics():
+def startup_handler():
+    # Start autonomous background scheduler
+    try:
+        start_scheduler()
+    except Exception as ex:
+        print(f"Notice starting scheduler: {ex}")
+
     client_id_masked = f"{settings.INSTAGRAM_CLIENT_ID[:4]}...{settings.INSTAGRAM_CLIENT_ID[-4:]}" if settings.INSTAGRAM_CLIENT_ID and len(settings.INSTAGRAM_CLIENT_ID) > 8 else "***"
     print("\n" + "=" * 60)
     print("SANKALP AI — STARTUP CONFIGURATION DIAGNOSTICS")
@@ -72,6 +80,14 @@ def log_startup_diagnostics():
     print(f"settings.INSTAGRAM_REDIRECT_URI: {settings.INSTAGRAM_REDIRECT_URI}")
     print(f"settings.YOUTUBE_REDIRECT_URI: {settings.YOUTUBE_REDIRECT_URI}")
     print("=" * 60 + "\n", flush=True)
+
+
+@app.on_event("shutdown")
+def shutdown_handler():
+    try:
+        shutdown_scheduler()
+    except Exception as ex:
+        print(f"Notice shutting down scheduler: {ex}")
 
 @app.get("/")
 def root():
